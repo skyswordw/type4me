@@ -247,7 +247,7 @@ struct HistoryTab: View {
                 .font(.system(size: 12))
             }
 
-            let count = recordsForExport.count
+            let count = exportCount
             Text(L("共 \(count) 条记录", "\(count) records"))
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
@@ -272,12 +272,14 @@ struct HistoryTab: View {
         .frame(width: 320)
     }
 
-    private var recordsForExport: [HistoryRecord] {
-        let source = records
-        if exportRangeAll { return source }
-        let startOfDay = Calendar.current.startOfDay(for: exportStart)
-        let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: exportEnd)) ?? exportEnd
-        return source.filter { $0.createdAt >= startOfDay && $0.createdAt < endOfDay }
+    private var exportCount: Int {
+        if exportRangeAll {
+            return historyStore.count()
+        } else {
+            let startOfDay = Calendar.current.startOfDay(for: exportStart)
+            let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: exportEnd)) ?? exportEnd
+            return historyStore.count(from: startOfDay, to: endOfDay)
+        }
     }
 
     private func exportCSV() {
