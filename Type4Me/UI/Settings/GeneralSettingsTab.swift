@@ -630,7 +630,7 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
     // MARK: - Global
 
     @AppStorage("tf_soundFeedback") private var soundFeedback = true
-    @AppStorage("tf_launchAtLogin") private var launchAtLogin = false
+    @AppStorage("tf_launchAtLogin") private var launchAtLogin = true
     @AppStorage("tf_visualStyle") private var visualStyle = "timeline"
     @AppStorage("tf_language") private var language = AppLanguage.systemDefault
 
@@ -884,6 +884,13 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
     }
 
     private func syncLoginItemState() {
-        launchAtLogin = SMAppService.mainApp.status == .enabled
+        let status = SMAppService.mainApp.status
+        if status == .notRegistered, !UserDefaults.standard.bool(forKey: "tf_didInitialLoginItemSetup") {
+            // First launch: register login item by default
+            UserDefaults.standard.set(true, forKey: "tf_didInitialLoginItemSetup")
+            setLoginItem(enabled: true)
+        } else {
+            launchAtLogin = status == .enabled
+        }
     }
 }
