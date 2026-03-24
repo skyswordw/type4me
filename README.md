@@ -3,7 +3,7 @@ MacOS语音输入工具，实时识别、大模型文本优化、全本地存储
 
 <img width="420" height="78" alt="image" src="https://github.com/user-attachments/assets/dbc676e0-6128-4bed-89a2-553d2d1a197c" />
 
-<video src="https://github.com/user-attachments/assets/eff0ed4b-f31a-41a0-8a1b-09e800cb2657" width="600" controls></video>
+[查看演示视频](#演示视频)
 
 **[下载 Type4Me v1.1.0](https://github.com/joewongjc/type4me/releases/download/v1.1.0/Type4Me-v1.1.0.dmg)** (macOS 14+)
 
@@ -166,6 +166,10 @@ bash scripts/deploy.sh
 - The ASR provider architecture is plugin-based: see `Type4Me/ASR/ASRProviderRegistry.swift` for the registry and `Type4Me/ASR/Providers/` for per-vendor configs
 - Currently only Volcengine (Doubao) ASR is implemented; other providers have config stubs but no client implementation yet
 - To add a new ASR provider, implement `ASRProviderConfig` + `SpeechRecognizer` protocol and register in `ASRProviderRegistry.all`
+
+## 演示视频
+
+<video src="https://github.com/user-attachments/assets/eff0ed4b-f31a-41a0-8a1b-09e800cb2657" width="600" controls></video>
 
 ## 许可证
 
