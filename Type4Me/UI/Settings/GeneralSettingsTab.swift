@@ -538,40 +538,14 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
         }
     }
 
-    private static let sherpaSetupCmd = "bash scripts/build-sherpa.sh && bash scripts/deploy.sh"
-
     private var localASRBuildGuide: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(L(
-                "本地识别需要先编译 SherpaOnnx 引擎。\n在项目文件夹上右键选择「在终端中打开」，然后执行以下命令:",
-                "Local ASR requires building the SherpaOnnx engine.\nRight-click the project folder and select 'Open in Terminal', then run:"
-            ))
-            .font(.system(size: 12))
-            .foregroundStyle(TF.settingsTextSecondary)
-
-            HStack(spacing: 6) {
-                Text(Self.sherpaSetupCmd)
-                    .font(.system(size: 11, design: .monospaced))
-                    .textSelection(.enabled)
-                Spacer()
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(Self.sherpaSetupCmd, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 10))
-                        .foregroundStyle(TF.settingsTextTertiary)
-                }
-                .buttonStyle(.plain)
-                .help(L("复制命令", "Copy command"))
-            }
-            .padding(8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 6).fill(TF.settingsBg.opacity(0.5)))
-
+        HStack(spacing: 4) {
+            Text(L("本地暂未部署识别引擎，请查看", "Local ASR engine not deployed. See"))
+                .font(.system(size: 12))
+                .foregroundStyle(TF.settingsTextSecondary)
             Link(
-                L("查看完整说明 →", "View full instructions →"),
-                destination: URL(string: "https://github.com/joewongjc/type4me#从源码构建")!
+                L("GitHub 详细指引", "GitHub instructions"),
+                destination: URL(string: "https://github.com/joewongjc/type4me#方式二从源码构建")!
             )
             .font(.system(size: 12, weight: .medium))
         }
