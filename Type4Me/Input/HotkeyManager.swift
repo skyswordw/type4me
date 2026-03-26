@@ -122,16 +122,27 @@ final class HotkeyManager: NSObject {
             guard binding.keyCode == keyCode else { continue }
 
             if isModifierKeyCode(keyCode) {
-                // Modifier keys: handle via flagsChanged only, don't swallow
-                if type == .flagsChanged {
-                    let pressed = isModifierPressed(keyCode: keyCode, flags: event.flags)
-                    handleBindingEvent(binding: binding, pressed: pressed)
+                // Modifier keys: handle via flagsChanged only, don't swallow.
+                // For combos like Ctrl+Shift, binding.modifiers stores "other modifiers".
+                guard type == .flagsChanged else { continue }
+                let pressed = isModifierPressed(keyCode: keyCode, flags: event.flags)
+
+                if pressed {
+                    let requiredMods = normalizedModifierFlags(binding.modifiers)
+                    let currentMods = otherModifierFlags(for: keyCode, flags: event.flags)
+                    guard currentMods == requiredMods else { continue }
+                    handleBindingEvent(binding: binding, pressed: true)
+                    return Unmanaged.passUnretained(event)
+                } else if isModifierBindingActive(binding) {
+                    // Always release active state even if other modifiers were released first.
+                    handleBindingEvent(binding: binding, pressed: false)
+                    return Unmanaged.passUnretained(event)
                 }
-                break
+                continue
             } else {
                 // Regular keys: check modifier flags match
-                let requiredMods = binding.modifiers
-                let currentMods = event.flags.intersection([.maskCommand, .maskShift, .maskAlternate, .maskControl])
+                let requiredMods = normalizedModifierFlags(binding.modifiers)
+                let currentMods = normalizedModifierFlags(event.flags)
                 guard currentMods == requiredMods else { continue }
 
                 switch binding.style {
@@ -277,6 +288,37 @@ final class HotkeyManager: NSObject {
 
     private func isModifierKeyCode(_ keyCode: CGKeyCode) -> Bool {
         [54, 55, 56, 58, 59, 60, 61, 62, 63].contains(keyCode)
+    }
+
+    private func normalizedModifierFlags(_ flags: CGEventFlags) -> CGEventFlags {
+        flags.intersection([.maskCommand, .maskShift, .maskAlternate, .maskControl])
+    }
+
+    private func modifierEventFlag(for keyCode: CGKeyCode) -> CGEventFlags? {
+        switch keyCode {
+        case 54, 55: return .maskCommand
+        case 56, 60: return .maskShift
+        case 58, 61: return .maskAlternate
+        case 59, 62: return .maskControl
+        default: return nil
+        }
+    }
+
+    private func otherModifierFlags(for keyCode: CGKeyCode, flags: CGEventFlags) -> CGEventFlags {
+        var mods = normalizedModifierFlags(flags)
+        if let ownFlag = modifierEventFlag(for: keyCode) {
+            mods.remove(ownFlag)
+        }
+        return mods
+    }
+
+    private func isModifierBindingActive(_ binding: ModeBinding) -> Bool {
+        switch binding.style {
+        case .hold:
+            return holdState[binding.modeId] ?? false
+        case .toggle:
+            return wasModifierDown[binding.modeId] ?? false
+        }
     }
 
     private func isModifierPressed(keyCode: CGKeyCode, flags: CGEventFlags) -> Bool {

@@ -558,6 +558,7 @@ private struct HotkeyRecordingSheet: View {
     @State private var isListening = true
     @State private var eventMonitor: Any?
     @State private var pendingModifierCode: Int?
+    @State private var pendingModifierModifiers: UInt64 = 0
     @State private var modifierCaptureTask: Task<Void, Never>?
 
     init(
@@ -730,13 +731,14 @@ private struct HotkeyRecordingSheet: View {
 
                 if pressed {
                     pendingModifierCode = kc
+                    pendingModifierModifiers = modifierComboModifiers(for: kc, flags: event.modifierFlags)
                     modifierCaptureTask?.cancel()
                     modifierCaptureTask = Task {
                         try? await Task.sleep(for: .milliseconds(400))
                         guard !Task.isCancelled else { return }
                         await MainActor.run {
                             guard let pending = pendingModifierCode else { return }
-                            captureModifierOnlyHotkey(pending)
+                            captureModifierOnlyHotkey(pending, modifiers: pendingModifierModifiers)
                         }
                     }
                 } else {
@@ -744,8 +746,9 @@ private struct HotkeyRecordingSheet: View {
                         modifierCaptureTask?.cancel()
                         modifierCaptureTask = nil
                         capturedKeyCode = pending
-                        capturedModifiers = 0
+                        capturedModifiers = pendingModifierModifiers
                         pendingModifierCode = nil
+                        pendingModifierModifiers = 0
                         isListening = false
                         removeMonitor()
                     }
@@ -766,7 +769,7 @@ private struct HotkeyRecordingSheet: View {
                 }
 
                 capturedKeyCode = kc
-                let clean = event.modifierFlags.intersection([.command, .shift, .option, .control])
+                let clean = sanitizedModifierFlags(event.modifierFlags)
                 capturedModifiers = clean.isEmpty ? 0 : UInt64(clean.rawValue)
                 isListening = false
                 removeMonitor()
@@ -778,10 +781,11 @@ private struct HotkeyRecordingSheet: View {
     }
 
     @MainActor
-    private func captureModifierOnlyHotkey(_ keyCode: Int) {
+    private func captureModifierOnlyHotkey(_ keyCode: Int, modifiers: UInt64) {
         capturedKeyCode = keyCode
-        capturedModifiers = 0
+        capturedModifiers = modifiers
         pendingModifierCode = nil
+        pendingModifierModifiers = 0
         isListening = false
         removeMonitor()
     }
@@ -797,18 +801,36 @@ private struct HotkeyRecordingSheet: View {
         modifierCaptureTask?.cancel()
         modifierCaptureTask = nil
         pendingModifierCode = nil
+        pendingModifierModifiers = 0
         removeMonitor()
     }
 
-    private func isModifierPressed(keyCode: Int, flags: NSEvent.ModifierFlags) -> Bool {
+    private func sanitizedModifierFlags(_ flags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
+        flags.intersection([.command, .shift, .option, .control])
+    }
+
+    private func modifierFlag(for keyCode: Int) -> NSEvent.ModifierFlags? {
         switch keyCode {
-        case 54, 55: return flags.contains(.command)
-        case 56, 60: return flags.contains(.shift)
-        case 58, 61: return flags.contains(.option)
-        case 59, 62: return flags.contains(.control)
-        case 63: return flags.contains(.function)
-        default: return false
+        case 54, 55: return .command
+        case 56, 60: return .shift
+        case 58, 61: return .option
+        case 59, 62: return .control
+        default: return nil
         }
+    }
+
+    private func modifierComboModifiers(for keyCode: Int, flags: NSEvent.ModifierFlags) -> UInt64 {
+        var clean = sanitizedModifierFlags(flags)
+        if let own = modifierFlag(for: keyCode) {
+            clean.remove(own)
+        }
+        return UInt64(clean.rawValue)
+    }
+
+    private func isModifierPressed(keyCode: Int, flags: NSEvent.ModifierFlags) -> Bool {
+        if keyCode == 63 { return flags.contains(.function) }
+        guard let flag = modifierFlag(for: keyCode) else { return false }
+        return flags.contains(flag)
     }
 }
 
