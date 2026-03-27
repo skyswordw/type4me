@@ -3,10 +3,13 @@ import os
 
 enum VolcASRError: Error, LocalizedError {
     case unsupportedProvider
+    case serverRejected(statusCode: Int, message: String?)
 
     var errorDescription: String? {
         switch self {
         case .unsupportedProvider: return "VolcASRClient requires VolcanoASRConfig"
+        case .serverRejected(let code, let message):
+            return message ?? "HTTP \(code)"
         }
     }
 }
@@ -79,12 +82,58 @@ actor VolcASRClient: SpeechRecognizer {
         audioPacketCount = 0
         totalAudioBytes = 0
         NSLog("[ASR] Sending full_client_request (%d bytes), connectId=%@", message.count, connectId)
-        try await task.send(.data(message))
+        do {
+            try await task.send(.data(message))
+        } catch {
+            // WebSocket handshake failed — probe with HTTP to get the real error
+            NSLog("[ASR] WebSocket send failed: %@, probing for server error...", String(describing: error))
+            if let serverError = await Self.probeServerError(request: request) {
+                throw serverError
+            }
+            throw error
+        }
 
         NSLog("[ASR] full_client_request sent OK")
 
         // Start receive loop
         startReceiveLoop()
+    }
+
+    /// When WebSocket handshake is rejected, make a plain HTTPS request to get the actual error body.
+    private static func probeServerError(request: URLRequest) async -> VolcASRError? {
+        guard let url = request.url,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return nil }
+        components.scheme = "https"
+        guard let httpsURL = components.url else { return nil }
+
+        var httpRequest = URLRequest(url: httpsURL, timeoutInterval: 5)
+        for (key, value) in request.allHTTPHeaderFields ?? [:] {
+            httpRequest.setValue(value, forHTTPHeaderField: key)
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: httpRequest)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode != 200 else { return nil }
+
+            // Try to parse JSON error body (e.g. {"code": 1001, "message": "..."})
+            var message: String?
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                message = json["message"] as? String ?? json["msg"] as? String
+                if let code = json["code"] as? Int, let msg = message {
+                    message = "\(msg) (\(code))"
+                }
+            } else if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+                message = String(text.prefix(200))
+            }
+
+            NSLog("[ASR] HTTP probe got %d: %@", httpResponse.statusCode, message ?? "(no body)")
+            return .serverRejected(statusCode: httpResponse.statusCode, message: message)
+        } catch {
+            NSLog("[ASR] HTTP probe failed: %@", String(describing: error))
+            return nil
+        }
     }
 
     // MARK: - Send Audio

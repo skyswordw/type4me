@@ -815,9 +815,28 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
                 asrTestStatus = .success
             } catch {
                 guard !Task.isCancelled else { return }
-                asrTestStatus = .failed(L("连接失败", "Connection failed"))
+                asrTestStatus = .failed(Self.describeConnectionError(error))
             }
         }
+    }
+
+    private static func describeConnectionError(_ error: Error) -> String {
+        if let volc = error as? VolcASRError, case .serverRejected(_, let message) = volc {
+            return message ?? L("服务器拒绝连接", "Server rejected")
+        }
+        if let volc = error as? VolcProtocolError, case .serverError(let code, let message) = volc {
+            let desc = message ?? L("服务器错误", "Server error")
+            return code.map { "\(desc) (\($0))" } ?? desc
+        }
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet: return L("网络未连接", "No internet")
+            case .timedOut: return L("连接超时", "Timed out")
+            case .cannotFindHost, .cannotConnectToHost: return L("无法连接服务器", "Cannot reach server")
+            default: return urlError.localizedDescription
+            }
+        }
+        return L("连接失败", "Connection failed") + ": " + error.localizedDescription
     }
 
     private func currentASRRequestOptions(enablePunc: Bool) -> ASRRequestOptions {
