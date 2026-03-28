@@ -42,7 +42,7 @@ struct FloatingBarView<S: FloatingBarState>: View {
         case .done:
             return feedbackWidth(for: state.feedbackMessage)
         case .error:
-            return TF.barWidth
+            return feedbackWidth(for: state.feedbackMessage)
         case .hidden:
             return TF.barHeight
         }
@@ -86,25 +86,14 @@ struct FloatingBarView<S: FloatingBarState>: View {
 
     // MARK: - Capsule Container
 
-    @ViewBuilder
     private var capsuleBar: some View {
-        let isError = state.barPhase == .error
         barContent
             .animation(TF.springSnappy, value: state.barPhase)
-            .frame(
-                width: capsuleWidth,
-                height: isError ? nil : TF.barHeight
-            )
-            .clipShape(isError
-                ? AnyShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                : AnyShape(Capsule())
-            )
+            .frame(width: capsuleWidth, height: TF.barHeight)
+            .clipShape(Capsule())
             .background {
                 capsuleBackground
-                    .clipShape(isError
-                        ? AnyShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        : AnyShape(Capsule())
-                    )
+                    .clipShape(Capsule())
             }
             .shadow(color: Color(white: 0.08, opacity: 0.5), radius: 5, x: 0, y: 0)
             .animation(TF.springSnappy, value: state.barPhase)
@@ -217,18 +206,15 @@ struct FloatingBarView<S: FloatingBarState>: View {
     }
 
     private var errorContent: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(spacing: 10) {
             ErrorDot()
 
             Text(state.feedbackMessage)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.white)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
     }
 
     // MARK: - Background & Border

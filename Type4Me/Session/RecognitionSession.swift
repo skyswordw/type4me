@@ -553,11 +553,11 @@ actor RecognitionSession {
 
             if injectionAborted {
                 onASREvent?(.error(NSError(domain: "Type4Me", code: -21, userInfo: [
-                    NSLocalizedDescriptionKey: L("已取消粘贴，内容已存入剪贴板和识别历史", "Paste cancelled, text saved to clipboard & history")
+                    NSLocalizedDescriptionKey: L("已取消粘贴", "Paste cancelled")
                 ])))
             } else if llmFailed {
                 onASREvent?(.error(NSError(domain: "Type4Me", code: -20, userInfo: [
-                    NSLocalizedDescriptionKey: L("LLM 处理失败，原文已存入剪贴板和识别历史", "LLM failed, raw text saved to clipboard & history")
+                    NSLocalizedDescriptionKey: L("LLM 处理失败，已回退原文", "LLM failed, raw text used")
                 ])))
             }
 
