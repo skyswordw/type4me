@@ -120,16 +120,22 @@ actor ModelManager {
         }
 
         var downloadURL: URL {
-            let base: String
             switch self {
             case .offlineParaformer:
-                base = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
+                return URL(string: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + directoryName + ".tar.bz2")!
             case .punctuation:
-                base = "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/"
+                return URL(string: "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/" + directoryName + ".tar.bz2")!
             case .sileroVad:
-                base = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
+                return URL(string: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx")!
             }
-            return URL(string: base + directoryName + ".tar.bz2")!
+        }
+
+        /// Whether this model is a single file download (not a tar.bz2 archive).
+        var isSingleFile: Bool {
+            switch self {
+            case .sileroVad: return true
+            default: return false
+            }
         }
 
         var requiredFiles: [String] {
@@ -299,6 +305,7 @@ actor ModelManager {
             key: aux.directoryName,
             url: aux.downloadURL,
             requiredFiles: aux.requiredFiles,
+            isSingleFile: aux.isSingleFile,
             onProgress: onProgress
         )
     }
@@ -334,6 +341,7 @@ actor ModelManager {
         key: String,
         url: URL,
         requiredFiles: [String],
+        isSingleFile: Bool = false,
         onProgress: @escaping @Sendable (Double) -> Void
     ) async throws {
         // Cancel any existing download task but keep resume data for continuation
@@ -361,16 +369,36 @@ actor ModelManager {
 
             try Task.checkCancellation()
 
-            logger.info("Extracting \(key) to \(self.modelsDir)")
             onProgress(0.95)
-            do {
-                try await extractTarBz2(tempFile, to: modelsDir)
-            } catch {
-                let partialDir = (modelsDir as NSString).appendingPathComponent(key)
-                try? FileManager.default.removeItem(atPath: partialDir)
-                throw error
+
+            if isSingleFile {
+                // Single file download: create directory and move file directly
+                logger.info("Placing single file \(key) into \(destDir)")
+                try FileManager.default.createDirectory(
+                    atPath: destDir,
+                    withIntermediateDirectories: true
+                )
+                let fileName = requiredFiles.first ?? url.lastPathComponent
+                let destPath = (destDir as NSString).appendingPathComponent(fileName)
+                if FileManager.default.fileExists(atPath: destPath) {
+                    try FileManager.default.removeItem(atPath: destPath)
+                }
+                try FileManager.default.moveItem(
+                    at: tempFile,
+                    to: URL(fileURLWithPath: destPath)
+                )
+            } else {
+                // Archive download: extract tar.bz2
+                logger.info("Extracting \(key) to \(self.modelsDir)")
+                do {
+                    try await extractTarBz2(tempFile, to: modelsDir)
+                } catch {
+                    let partialDir = (modelsDir as NSString).appendingPathComponent(key)
+                    try? FileManager.default.removeItem(atPath: partialDir)
+                    throw error
+                }
+                try? FileManager.default.removeItem(at: tempFile)
             }
-            try? FileManager.default.removeItem(at: tempFile)
 
             guard checkFiles(dir: key, files: requiredFiles) else {
                 logger.error("Model validation failed: \(key)")

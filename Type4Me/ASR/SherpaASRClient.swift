@@ -162,7 +162,6 @@ actor SherpaASRClient: SpeechRecognizer {
     // MARK: - Build Config
 
     private static func buildRecognizerConfig(modelDir: String) -> SherpaOnnxOnlineRecognizerConfig {
-        let selectedModel = ModelManager.selectedStreamingModel
         let tokensPath = (modelDir as NSString).appendingPathComponent("tokens.txt")
 
         let paraConfig = sherpaOnnxOnlineParaformerModelConfig(
