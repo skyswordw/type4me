@@ -81,7 +81,7 @@ enum ASRProviderRegistry {
             createClient: {
                 switch ModelManager.selectedStreamingModel.architecture {
                 case .senseVoice:
-                    return SenseVoiceASRClient()
+                    return SenseVoiceWSClient()
                 case .paraformer:
                     return SherpaASRClient()
                 }
