@@ -1174,7 +1174,7 @@ class StreamingSenseVoice:
         speech = torch.cat((self.query, speech), dim=1)
         speech_lengths += 4
         encoder_out, _ = self.model.encoder(speech, speech_lengths)
-        return self.model.ctc.log_softmax(encoder_out)[0, 4:]
+        return self.model.ctc.log_softmax(encoder_out)[0, 4:].detach()
 
     def decode(self, times, tokens):
         times_ms = []

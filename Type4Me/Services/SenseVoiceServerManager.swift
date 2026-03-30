@@ -464,7 +464,18 @@ actor SenseVoiceServerManager {
         if let bundled = bundledModel, FileManager.default.fileExists(atPath: bundled.path) {
             modelDir = bundled.path
         } else {
-            modelDir = "iic/SenseVoiceSmall"
+            // Check ModelScope cache: if model.pt exists, use the local path directly
+            // to avoid ModelScope re-downloading due to stale metadata (.mdl corruption).
+            let cacheDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".cache/modelscope/hub/models/iic/SenseVoiceSmall")
+            let cachedModel = cacheDir.appendingPathComponent("model.pt")
+            if FileManager.default.fileExists(atPath: cachedModel.path) {
+                modelDir = cacheDir.path
+                logger.info("Using ModelScope cached model at \(cacheDir.path)")
+            } else {
+                modelDir = "iic/SenseVoiceSmall"
+                logger.info("No cached model, will download from ModelScope")
+            }
         }
 
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
