@@ -307,10 +307,18 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
 
     private var preserveClipboardRow: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(L("注入剪贴板", "Copy to Clipboard").uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(0.8)
-                .foregroundStyle(TF.settingsTextTertiary)
+            HStack(spacing: 4) {
+                Text(L("注入剪贴板", "Copy to Clipboard").uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(TF.settingsTextTertiary)
+                Text("|")
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.settingsTextTertiary.opacity(0.5))
+                Text(L("开启后始终写入剪贴板", "Always copy to clipboard"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.settingsTextTertiary)
+            }
             settingsDropdown(
                 selection: Binding(
                     get: { preserveClipboard ? "off" : "on" },
@@ -321,20 +329,24 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
                     ("off", L("关闭", "Off")),
                 ]
             )
-            Text(L("开启后识别文本始终写入剪贴板", "When on, recognized text is always copied to clipboard"))
-                .font(.system(size: 10))
-                .foregroundStyle(TF.settingsTextTertiary)
-                .lineSpacing(2)
         }
         .padding(.vertical, 6)
     }
 
     private var dockIconRow: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(L("DOCK 图标", "Dock Icon").uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(0.8)
-                .foregroundStyle(TF.settingsTextTertiary)
+            HStack(spacing: 4) {
+                Text(L("DOCK 图标", "Dock Icon").uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(TF.settingsTextTertiary)
+                Text("|")
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.settingsTextTertiary.opacity(0.5))
+                Text(L("隐藏后仅保留菜单栏", "Menu bar only when hidden"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.settingsTextTertiary)
+            }
             settingsDropdown(
                 selection: Binding(
                     get: { showDockIcon ? "on" : "off" },
@@ -345,10 +357,6 @@ struct GeneralSettingsTab: View, SettingsCardHelpers {
                     ("off", L("隐藏", "Hide")),
                 ]
             )
-            Text(L("隐藏后仅保留菜单栏图标", "When hidden, only the menu bar icon remains"))
-                .font(.system(size: 10))
-                .foregroundStyle(TF.settingsTextTertiary)
-                .lineSpacing(2)
         }
         .padding(.vertical, 6)
     }

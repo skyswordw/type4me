@@ -19,6 +19,8 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
 
     // Local model states
     @State private var localModelAvailable: Bool = ModelManager.isSenseVoiceBundled
+    @State private var serverRunning = false
+    @State private var serverStarting = false
 
     private var currentASRFields: [CredentialField] {
         ASRProviderRegistry.configType(for: selectedASRProvider)?.credentialFields ?? []
@@ -251,25 +253,67 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
 
     // MARK: - Local Model Section
 
+    /// Display name for the local ASR model based on chip architecture.
+    private var localASRModelName: String {
+        #if arch(arm64)
+        return "Qwen3-ASR (MLX)"
+        #else
+        return "SenseVoice (ONNX)"
+        #endif
+    }
+
+    private var localASRModelDescription: String {
+        #if arch(arm64)
+        return L("阿里 Qwen3 语音模型，Metal GPU 加速，支持中英",
+                 "Alibaba Qwen3 ASR, Metal GPU accelerated, zh/en")
+        #else
+        return L("阿里开源语音模型，支持中英粤日韩，自动标点，流式识别",
+                 "Alibaba open-source ASR, zh/en/yue/ja/ko, auto punctuation, streaming")
+        #endif
+    }
+
     private var localModelSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if ModelManager.isSenseVoiceBundled {
-                // Full version: model is bundled
+            if localModelAvailable {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(TF.settingsAccentGreen)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("SenseVoice")
+                        Text(localASRModelName)
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(TF.settingsText)
-                        Text(L("阿里开源语音模型，支持中英粤日韩，自动标点，流式识别",
-                               "Alibaba open-source ASR, zh/en/yue/ja/ko, auto punctuation, streaming"))
+                        Text(localASRModelDescription)
                             .font(.system(size: 10))
                             .foregroundStyle(TF.settingsTextSecondary)
                     }
                 }
+
+                // Inline server status
+                SettingsDivider()
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(serverRunning ? TF.settingsAccentGreen : TF.settingsAccentRed)
+                        .frame(width: 8, height: 8)
+                    Text(serverRunning
+                        ? L("推理服务运行中", "Server running")
+                        : L("推理服务未启动", "Server stopped"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(TF.settingsTextSecondary)
+                    Spacer()
+                    if !serverRunning && !serverStarting {
+                        Button(L("启动", "Start")) {
+                            startServer()
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .buttonStyle(.borderedProminent)
+                        .tint(TF.settingsAccentAmber)
+                        .controlSize(.small)
+                    } else if serverStarting {
+                        ProgressView().controlSize(.small)
+                    }
+                }
             } else {
-                // Lite version: no model bundled, show download link
+                // Lite version: no model bundled
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle")
@@ -293,6 +337,20 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
 
     private func refreshModelStatus() {
         localModelAvailable = ModelManager.isSenseVoiceBundled
+        Task { serverRunning = await SenseVoiceServerManager.shared.isRunning }
+    }
+
+    private func startServer() {
+        serverStarting = true
+        Task {
+            do {
+                try await SenseVoiceServerManager.shared.start()
+                serverRunning = true
+            } catch {
+                NSLog("[ASRSettings] Server start failed: %@", String(describing: error))
+            }
+            serverStarting = false
+        }
     }
 
     private func testLocalModel() {
