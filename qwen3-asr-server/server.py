@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 
 import re
 import threading
@@ -175,6 +175,20 @@ def _transcribe_sync(sess, samples_i16: list[int], strip_punct: bool = False,
         if strip_punct and text:
             text = _PUNCT_RE.sub("", text)
         return text
+
+
+@app.post("/transcribe")
+async def transcribe_http(request: Request):
+    """HTTP endpoint for speculative transcription. Accepts raw PCM16-LE audio."""
+    body = await request.body()
+    if len(body) < 100:
+        return {"text": ""}
+
+    sample_count = len(body) // 2
+    samples = list(struct.unpack(f"<{sample_count}h", body))
+
+    text = await _transcribe(get_session(), samples, strip_punct=False)
+    return {"text": text}
 
 
 @app.get("/health")
