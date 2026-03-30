@@ -7,6 +7,7 @@ actor SenseVoiceWSClient: SpeechRecognizer {
     private let logger = Logger(subsystem: "com.type4me.asr", category: "SenseVoiceWS")
 
     private var webSocketTask: URLSessionWebSocketTask?
+    private var session: URLSession?
     private var receiveTask: Task<Void, Never>?
     private var eventContinuation: AsyncStream<RecognitionEvent>.Continuation?
     private var _events: AsyncStream<RecognitionEvent>?
@@ -66,6 +67,7 @@ actor SenseVoiceWSClient: SpeechRecognizer {
             let session = URLSession(configuration: .default)
             let task = session.webSocketTask(with: url)
             task.resume()
+            self.session = session
             self.webSocketTask = task
 
             startReceiveLoop()
@@ -272,6 +274,8 @@ actor SenseVoiceWSClient: SpeechRecognizer {
         receiveTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
+        session?.invalidateAndCancel()
+        session = nil
         eventContinuation?.finish()
         eventContinuation = nil
         _events = nil
