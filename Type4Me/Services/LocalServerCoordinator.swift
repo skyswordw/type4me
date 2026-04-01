@@ -26,7 +26,7 @@ class LocalServerCoordinator {
     /// Start server + send dummy LLM request to trigger model preloading.
     func preloadLLM() async {
         await ensureRunning()
-        let port = SenseVoiceServerManager.currentQwen3Port ?? SenseVoiceServerManager.currentPort
+        let port = SenseVoiceServerManager.currentQwen3Port
         guard let port else { return }
         // Trigger lazy LLM model load
         let url = URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!

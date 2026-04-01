@@ -296,7 +296,7 @@ final class AppState {
     var feedbackMessage: String = L("已完成", "Done")
     var processingFinishTime: Date?
     var isQwen3OnlyMode: Bool {
-        SenseVoiceServerManager.currentPort == nil && SenseVoiceServerManager.currentQwen3Port != nil
+        SenseVoiceServerManager.currentQwen3Port != nil
     }
 
     // MARK: Panel Control (not observed by SwiftUI)

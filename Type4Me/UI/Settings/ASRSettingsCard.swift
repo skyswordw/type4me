@@ -233,13 +233,12 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
             if oldProvider == .sherpa && newProvider != .sherpa {
                 Task {
                     let mgr = SenseVoiceServerManager.shared
-                    await mgr.stopSenseVoice()
-                    serverRunning = false
                     let llmNeedsQwen3 = KeychainService.selectedLLMProvider == .localQwen
                     if !llmNeedsQwen3 {
                         await mgr.stopQwen3()
                         qwen3Running = false
                     }
+                    serverRunning = false
                 }
             }
             // Start both servers when user explicitly switches to local ASR
@@ -488,24 +487,8 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
     }
 
     private func toggleSenseVoice(_ enabled: Bool) {
+        // SenseVoice Python server removed; native sherpa-onnx handles SenseVoice now.
         sensevoiceEnabled = enabled
-        svToggling = true
-        Task {
-            let mgr = SenseVoiceServerManager.shared
-            if enabled {
-                do {
-                    try await mgr.startSenseVoice()
-                    serverRunning = await mgr.isRunning
-                } catch {
-                    NSLog("[ASRSettings] SenseVoice start failed: %@", String(describing: error))
-                    sensevoiceEnabled = false
-                }
-            } else {
-                await mgr.stopSenseVoice()
-                serverRunning = false
-            }
-            svToggling = false
-        }
     }
 
     private func toggleQwen3(_ enabled: Bool) {
@@ -536,22 +519,14 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
             let mgr = SenseVoiceServerManager.shared
             guard !Task.isCancelled else { return }
 
-            let svHealthy = await mgr.isHealthy()
-            var qwen3Healthy = false
-            if let qp = await mgr.qwen3Port {
-                let url = URL(string: "http://127.0.0.1:\(qp)/health")!
-                qwen3Healthy = (try? await URLSession.shared.data(from: url)).map {
-                    ($0.1 as? HTTPURLResponse)?.statusCode == 200
-                } ?? false
-            }
+            let qwen3Healthy = await mgr.isHealthy()
             guard !Task.isCancelled else { return }
 
-            if svHealthy || qwen3Healthy {
+            if qwen3Healthy {
                 asrTestStatus = .success
             } else {
-                let svPort = SenseVoiceServerManager.currentPort
                 let q3Port = SenseVoiceServerManager.currentQwen3Port
-                if svPort == nil && q3Port == nil {
+                if q3Port == nil {
                     asrTestStatus = .failed(L("服务未启动", "No server running"))
                 } else {
                     asrTestStatus = .failed(L("服务未就绪，请稍候重试", "Server not ready, try again"))

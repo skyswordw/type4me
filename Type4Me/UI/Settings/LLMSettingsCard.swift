@@ -164,15 +164,14 @@ struct LLMSettingsCard: View, SettingsCardHelpers {
         do {
             try await SenseVoiceServerManager.shared.start()
 
-            let qPort = SenseVoiceServerManager.currentQwen3Port
-            guard let port = qPort ?? SenseVoiceServerManager.currentPort else {
+            guard let port = SenseVoiceServerManager.currentQwen3Port else {
                 NSLog("[Settings] No server port available for LLM")
                 serverStarting = false
                 return
             }
 
             // Re-enable LLM loading (in case it was disabled by stop button)
-            if qPort != nil {
+            do {
                 let enableURL = URL(string: "http://127.0.0.1:\(port)/llm/load")!
                 var enableReq = URLRequest(url: enableURL)
                 enableReq.httpMethod = "POST"
@@ -391,7 +390,7 @@ struct LLMSettingsCard: View, SettingsCardHelpers {
                 let llmConfig: LLMConfig
                 if provider == .localQwen {
                     // LLM runs on Qwen3-ASR server (shares Metal GPU lock)
-                    let port = SenseVoiceServerManager.currentQwen3Port ?? SenseVoiceServerManager.currentPort
+                    let port = SenseVoiceServerManager.currentQwen3Port
                     guard let port else {
                         guard !Task.isCancelled else { return }
                         llmTestStatus = .failed(L("Qwen3 服务未运行，请先启动", "Qwen3 server not running, start it first"))
