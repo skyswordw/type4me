@@ -163,7 +163,7 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
                         secondaryButton(L("修改", "Edit")) {
                             testTask?.cancel()
                             asrTestStatus = .idle
-                            asrCredentialValues = savedASRValues
+                            asrCredentialValues = [:]
                             editedFields = []
                             isEditingASR = true
                         }
@@ -207,7 +207,11 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
     // MARK: - Provider Picker
 
     private static let recommendedProviders: [ASRProvider] = [.volcano, .soniox]
+    #if HAS_SHERPA_ONNX
     private static let localProviders: [ASRProvider] = [.apple, .sherpa]
+    #else
+    private static let localProviders: [ASRProvider] = [.apple]
+    #endif
 
     private var asrProviderPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -216,8 +220,9 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
                 .tracking(0.8)
                 .foregroundStyle(TF.settingsTextTertiary)
             HStack(spacing: 10) {
+                let localSet = Set(Self.localProviders)
                 let availableSet = Set(ASRProvider.allCases
-                    .filter { $0.isLocal || (ASRProviderRegistry.entry(for: $0)?.isAvailable ?? false) })
+                    .filter { localSet.contains($0) || (ASRProviderRegistry.entry(for: $0)?.isAvailable ?? false) })
                 let recommended = Self.recommendedProviders.filter { availableSet.contains($0) }
                 let local = Self.localProviders.filter { availableSet.contains($0) }
                 let others = ASRProvider.allCases.filter { availableSet.contains($0) && !Self.recommendedProviders.contains($0) && !Self.localProviders.contains($0) }
@@ -283,12 +288,8 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
             // Stop servers when switching away from local ASR
             if oldProvider == .sherpa && newProvider != .sherpa {
                 Task {
-                    let mgr = SenseVoiceServerManager.shared
-                    let llmNeedsQwen3 = KeychainService.selectedLLMProvider == .localQwen
-                    if !llmNeedsQwen3 {
-                        await mgr.stopQwen3()
-                        qwen3Running = false
-                    }
+                    await SenseVoiceServerManager.shared.stopQwen3()
+                    qwen3Running = false
                     serverRunning = false
                 }
             }
@@ -326,13 +327,6 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
 
     @ViewBuilder
     private func credentialFieldRow(_ field: CredentialField) -> some View {
-        let binding = Binding<String>(
-            get: { asrCredentialValues[field.key] ?? "" },
-            set: {
-                asrCredentialValues[field.key] = $0
-                editedFields.insert(field.key)
-            }
-        )
         if !field.options.isEmpty {
             let pickerBinding = Binding<String>(
                 get: {
@@ -345,10 +339,32 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
                 }
             )
             settingsPickerField(field.label, selection: pickerBinding, options: field.options)
-        } else {
+        } else if field.isSecure {
+            let binding = Binding<String>(
+                get: { asrCredentialValues[field.key] ?? "" },
+                set: {
+                    asrCredentialValues[field.key] = $0
+                    editedFields.insert(field.key)
+                }
+            )
             let savedVal = savedASRValues[field.key] ?? ""
             let placeholder = savedVal.isEmpty ? field.placeholder : maskedSecret(savedVal)
-            settingsField(field.label, text: binding, prompt: placeholder)
+            settingsSecureField(field.label, text: binding, prompt: placeholder)
+        } else {
+            let binding = Binding<String>(
+                get: {
+                    let val = asrCredentialValues[field.key] ?? ""
+                    if val.isEmpty {
+                        return savedASRValues[field.key] ?? field.defaultValue
+                    }
+                    return val
+                },
+                set: {
+                    asrCredentialValues[field.key] = $0
+                    editedFields.insert(field.key)
+                }
+            )
+            settingsField(field.label, text: binding, prompt: field.placeholder)
         }
     }
 

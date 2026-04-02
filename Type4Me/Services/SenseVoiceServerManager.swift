@@ -95,12 +95,6 @@ actor SenseVoiceServerManager {
 
         try configureQwen3Server(proc: proc, args: &args)
 
-        // LLM runs on Qwen3 server (shares _inference_lock for Metal GPU)
-        if let llmPath = LocalQwenLLMConfig.modelPath {
-            args += ["--llm-model", llmPath]
-            logger.info("LLM model configured on Qwen3 server: \(llmPath)")
-        }
-
         proc.arguments = args
 
         let pipe = Pipe()
@@ -147,7 +141,16 @@ actor SenseVoiceServerManager {
             try? await Task.sleep(for: .seconds(1))
         }
         if !healthy {
-            logger.warning("Qwen3-ASR server started but health check not responding yet")
+            logger.error("Qwen3-ASR server started but health check failed after 30s")
+            DebugFileLogger.log("Qwen3-ASR health check failed — server may be non-functional")
+            proc.terminate()
+            self.qwen3Process = nil
+            self.qwen3Port = nil
+            Self.currentQwen3Port = nil
+            throw ServerError.launchFailed(
+                NSError(domain: "SenseVoiceServerManager", code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "Health check failed after server start"])
+            )
         }
         savePidsToFile()
     }

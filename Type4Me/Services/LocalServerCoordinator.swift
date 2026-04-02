@@ -40,11 +40,10 @@ class LocalServerCoordinator {
         logger.info("Local LLM model preloaded")
     }
 
-    /// Stop server only if neither ASR nor LLM needs it.
+    /// Stop server only if ASR doesn't need it.
     func stopIfUnneeded() async {
         let asrNeedsLocal = KeychainService.selectedASRProvider == .sherpa
-        let llmNeedsLocal = KeychainService.selectedLLMProvider == .localQwen
-        if !asrNeedsLocal && !llmNeedsLocal {
+        if !asrNeedsLocal {
             await SenseVoiceServerManager.shared.stop()
             isRunning = false
             logger.info("Server stopped (no longer needed)")

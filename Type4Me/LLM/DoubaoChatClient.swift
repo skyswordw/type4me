@@ -46,12 +46,11 @@ actor DoubaoChatClient: LLMClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
 
-        let useStreaming = provider != .localQwen
         let disableField = provider.thinkingDisableField
         let body = ChatRequest(
             model: config.model,
             messages: [ChatMessage(role: "user", content: finalPrompt)],
-            stream: useStreaming,
+            stream: true,
             thinking: disableField == .thinking ? ThinkingConfig(type: "disabled") : nil,
             enable_thinking: disableField == .enableThinking ? false : nil,
             reasoning_effort: disableField == .reasoningEffort ? "none" : nil,
@@ -60,14 +59,9 @@ actor DoubaoChatClient: LLMClient {
         )
         request.httpBody = try JSONEncoder().encode(body)
 
-        logger.info("LLM request: \(text.count) chars, endpoint=\(config.model), stream=\(useStreaming)")
+        logger.info("LLM request: \(text.count) chars, endpoint=\(config.model), stream=true")
 
-        let result: String
-        if useStreaming {
-            result = try await processStreaming(request: request, model: config.model)
-        } else {
-            result = try await processNonStreaming(request: request, model: config.model)
-        }
+        let result = try await processStreaming(request: request, model: config.model)
 
         logger.info("LLM result: \(result.count) chars")
         return result.strippingThinkTags()

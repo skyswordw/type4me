@@ -194,11 +194,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Start SenseVoice Python server if local ASR or local LLM is selected
+        // Start SenseVoice Python server if local ASR is selected
         let needsLocalServer = KeychainService.selectedASRProvider == .sherpa
-            || KeychainService.selectedLLMProvider == .localQwen
         if needsLocalServer {
-            if ModelManager.isQwen3ASRBundled || LocalQwenLLMConfig.isModelAvailable {
+            if ModelManager.isQwen3ASRBundled {
                 Task {
                     do {
                         try await SenseVoiceServerManager.shared.start()

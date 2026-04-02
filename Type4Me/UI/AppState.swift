@@ -295,7 +295,9 @@ final class AppState {
     var feedbackMessage: String = L("已完成", "Done")
     var processingFinishTime: Date?
     var isQwen3OnlyMode: Bool {
-        SenseVoiceServerManager.currentQwen3Port != nil
+        // SenseVoice (sherpa) provides real-time partials even when Qwen3 also runs for calibration
+        guard KeychainService.selectedASRProvider != .sherpa else { return false }
+        return SenseVoiceServerManager.currentQwen3Port != nil
     }
 
     // MARK: Panel Control (not observed by SwiftUI)

@@ -30,6 +30,7 @@ struct OpenAICompatibleLLMConfig<Tag: OpenAICompatibleLLMTag>: LLMProviderConfig
 
     static var credentialFields: [CredentialField] {
         let p = Tag.provider
+        let models = p.modelOptions
         return [
             CredentialField(
                 key: "apiKey", label: "API Key",
@@ -39,7 +40,9 @@ struct OpenAICompatibleLLMConfig<Tag: OpenAICompatibleLLMTag>: LLMProviderConfig
             CredentialField(
                 key: "model", label: L("模型", "Model"),
                 placeholder: L("模型名称或 endpoint ID", "Model name or endpoint ID"),
-                isSecure: false, isOptional: false, defaultValue: ""
+                isSecure: false, isOptional: false,
+                defaultValue: models.first?.value ?? "",
+                options: models, allowCustomInput: true
             ),
             CredentialField(
                 key: "baseURL", label: "Base URL",

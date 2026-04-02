@@ -8,7 +8,9 @@ import SherpaOnnxLib
 enum SherpaASRError: Error, LocalizedError {
     case unsupportedConfig
     case modelNotFound(String)
+    case modelFileMissing(file: String, dir: String)
     case recognizerInitFailed
+    case vadInitFailed
 
     var errorDescription: String? {
         switch self {
@@ -16,8 +18,12 @@ enum SherpaASRError: Error, LocalizedError {
             return "SenseVoiceASRClient requires SherpaASRConfig"
         case .modelNotFound(let path):
             return L("模型未找到: \(path)", "Model not found: \(path)")
+        case .modelFileMissing(let file, let dir):
+            return L("模型文件缺失: \(file) (在 \(dir))", "Model file missing: \(file) (in \(dir))")
         case .recognizerInitFailed:
-            return L("识别引擎初始化失败", "Recognizer initialization failed")
+            return L("识别引擎初始化失败，请重新下载模型", "Recognizer init failed, please re-download models")
+        case .vadInitFailed:
+            return L("语音检测引擎初始化失败，请重新下载模型", "VAD init failed, please re-download models")
         }
     }
 }
@@ -80,6 +86,34 @@ actor SenseVoiceASRClient: SpeechRecognizer {
         return stream
     }
 
+    // MARK: - Model Validation
+
+    /// Validate all required model files exist and have non-zero size.
+    private static func validateModelFiles(senseVoiceDir: String, vadDir: String) throws {
+        let svFiles = ["model.int8.onnx", "tokens.txt"]
+        for file in svFiles {
+            let path = (senseVoiceDir as NSString).appendingPathComponent(file)
+            guard FileManager.default.fileExists(atPath: path) else {
+                throw SherpaASRError.modelFileMissing(file: file, dir: senseVoiceDir)
+            }
+            let attrs = try? FileManager.default.attributesOfItem(atPath: path)
+            let size = attrs?[.size] as? UInt64 ?? 0
+            if size == 0 {
+                throw SherpaASRError.modelFileMissing(file: "\(file) (0 bytes)", dir: senseVoiceDir)
+            }
+        }
+
+        let vadFile = "silero_vad.onnx"
+        let vadPath = (vadDir as NSString).appendingPathComponent(vadFile)
+        guard FileManager.default.fileExists(atPath: vadPath) else {
+            throw SherpaASRError.modelFileMissing(file: vadFile, dir: vadDir)
+        }
+        let vadAttrs = try? FileManager.default.attributesOfItem(atPath: vadPath)
+        if (vadAttrs?[.size] as? UInt64 ?? 0) == 0 {
+            throw SherpaASRError.modelFileMissing(file: "\(vadFile) (0 bytes)", dir: vadDir)
+        }
+    }
+
     // MARK: - Cached models (avoid reloading each session)
 
     private static let cacheLock = NSLock()
@@ -115,12 +149,31 @@ actor SenseVoiceASRClient: SpeechRecognizer {
         let svDir = config.senseVoiceModelDir
         let vadDir = config.vadModelDir
 
+        // Validate files before attempting init
+        do {
+            try validateModelFiles(senseVoiceDir: svDir, vadDir: vadDir)
+        } catch {
+            NSLog("[SenseVoiceASR] Model validation failed: %@", error.localizedDescription)
+            return
+        }
+
         if cachedRecognizer == nil || cachedSenseVoiceModelDir != svDir {
             NSLog("[SenseVoiceASR] Preloading SenseVoice model from %@", svDir)
             var recConfig = buildRecognizerConfig(modelDir: svDir)
-            cachedRecognizer = SherpaOnnxOfflineRecognizer(config: &recConfig)
-            cachedSenseVoiceModelDir = svDir
-            NSLog("[SenseVoiceASR] SenseVoice model preloaded")
+            let rec = SherpaOnnxOfflineRecognizer(config: &recConfig)
+            // Smoke test: decode 100ms of silence to verify model actually works
+            let silence = [Float](repeating: 0.0, count: 1600)
+            let test = rec.decode(samples: silence, sampleRate: 16_000)
+            if test.text.isEmpty || test.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                cachedRecognizer = rec
+                cachedSenseVoiceModelDir = svDir
+                NSLog("[SenseVoiceASR] SenseVoice model preloaded (smoke test passed)")
+            } else {
+                NSLog("[SenseVoiceASR] ⚠️ SenseVoice smoke test produced unexpected output for silence: %@", test.text)
+                // Still cache it — non-empty output for silence is unusual but not necessarily fatal
+                cachedRecognizer = rec
+                cachedSenseVoiceModelDir = svDir
+            }
         }
 
         if cachedVAD == nil || cachedVadModelDir != vadDir {
@@ -167,19 +220,18 @@ actor SenseVoiceASRClient: SpeechRecognizer {
         let svModelDir = sherpaConfig.senseVoiceModelDir
         let vadModelDir = sherpaConfig.vadModelDir
 
+        // Validate all model files before attempting init
+        try Self.validateModelFiles(senseVoiceDir: svModelDir, vadDir: vadModelDir)
+
         // --- SenseVoice offline recognizer ---
         if let cached = Self.cachedRecognizer, Self.cachedSenseVoiceModelDir == svModelDir {
             recognizer = cached
             logger.info("Reusing cached SenseVoice recognizer")
         } else {
-            let modelPath = (svModelDir as NSString).appendingPathComponent("model.int8.onnx")
-            guard FileManager.default.fileExists(atPath: modelPath) else {
-                throw SherpaASRError.modelNotFound(svModelDir)
-            }
-
             var recConfig = Self.buildRecognizerConfig(modelDir: svModelDir)
-            recognizer = SherpaOnnxOfflineRecognizer(config: &recConfig)
-            Self.cachedRecognizer = recognizer
+            let rec = SherpaOnnxOfflineRecognizer(config: &recConfig)
+            recognizer = rec
+            Self.cachedRecognizer = rec
             Self.cachedSenseVoiceModelDir = svModelDir
             logger.info("Created new SenseVoice recognizer from \(svModelDir)")
         }
@@ -190,16 +242,12 @@ actor SenseVoiceASRClient: SpeechRecognizer {
             vad = cached
             logger.info("Reusing cached VAD")
         } else {
-            let vadPath = (vadModelDir as NSString).appendingPathComponent("silero_vad.onnx")
-            guard FileManager.default.fileExists(atPath: vadPath) else {
-                throw SherpaASRError.modelNotFound(vadModelDir)
-            }
-
             var vadConfig = Self.buildVADConfig(modelDir: vadModelDir)
-            vad = SherpaOnnxVoiceActivityDetectorWrapper(
+            let v = SherpaOnnxVoiceActivityDetectorWrapper(
                 config: &vadConfig, buffer_size_in_seconds: 60
             )
-            Self.cachedVAD = vad
+            vad = v
+            Self.cachedVAD = v
             Self.cachedVadModelDir = vadModelDir
             logger.info("Created new VAD from \(vadModelDir)")
         }
@@ -267,7 +315,10 @@ actor SenseVoiceASRClient: SpeechRecognizer {
     // MARK: - Send Audio
 
     func sendAudio(_ data: Data) async throws {
-        guard let vad, let recognizer else { return }
+        guard let vad, let recognizer else {
+            logger.error("sendAudio called but recognizer/VAD is nil — engine not initialized")
+            throw SherpaASRError.recognizerInitFailed
+        }
 
         var floatSamples = Self.int16ToFloat32(data)
         totalSamplesFed += floatSamples.count
@@ -356,8 +407,16 @@ actor SenseVoiceASRClient: SpeechRecognizer {
 
         DebugFileLogger.log("SenseVoice endAudio: start, confirmed=\(confirmedSegments.count) buffer=\(speechBuffer.count) pending=\(pendingConfirmations)")
 
-        // Wait for any in-flight segment confirmations to land
+        // Wait for any in-flight segment confirmations to land (with timeout)
+        let waitStart = ContinuousClock.now
+        let maxWait = Duration.seconds(3)
         while pendingConfirmations > 0 {
+            if ContinuousClock.now - waitStart > maxWait {
+                logger.warning("pendingConfirmations timeout (\(self.pendingConfirmations) still pending), proceeding")
+                DebugFileLogger.log("SenseVoice endAudio: pendingConfirmations timeout, \(pendingConfirmations) stuck")
+                pendingConfirmations = 0
+                break
+            }
             try await Task.sleep(for: .milliseconds(20))
         }
 

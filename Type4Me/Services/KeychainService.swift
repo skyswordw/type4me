@@ -206,12 +206,6 @@ enum KeychainService {
 
     /// Load LLMConfig for the currently selected provider.
     static func loadLLMConfig() -> LLMConfig? {
-        if selectedLLMProvider == .localQwen {
-            // LLM runs on Qwen3-ASR server (shares Metal GPU lock); fall back to primary
-            let port = SenseVoiceServerManager.currentQwen3Port
-            guard let port else { return nil }
-            return LLMConfig(apiKey: "", model: "qwen3-4b", baseURL: "http://127.0.0.1:\(port)/v1")
-        }
         guard let config = loadSelectedLLMConfig() else { return nil }
         return config.toLLMConfig()
     }

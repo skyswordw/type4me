@@ -26,7 +26,7 @@ enum ASRProvider: String, CaseIterable, Codable, Sendable {
 
     var displayName: String {
         switch self {
-        case .sherpa:   return L("本地识别", "Local ASR")
+        case .sherpa:   return L("SenseVoice 流式 + Qwen3 ASR 校准", "SenseVoice Streaming + Qwen3 ASR")
         case .apple:    return "Apple Speech"
         case .openai:   return "OpenAI"
         case .azure:    return "Azure Speech"
@@ -65,10 +65,16 @@ struct CredentialField: Sendable, Identifiable {
     let defaultValue: String
     /// When non-empty, the UI renders a Picker instead of a TextField.
     let options: [FieldOption]
+    /// When true (and options is non-empty), the picker includes a "Custom" entry
+    /// that reveals a text field for free-form input.
+    let allowCustomInput: Bool
+
+    /// Sentinel value used in the picker to represent "custom input" mode.
+    static let customValue = "_custom"
 
     var id: String { key }
 
-    init(key: String, label: String, placeholder: String, isSecure: Bool, isOptional: Bool, defaultValue: String, options: [FieldOption] = []) {
+    init(key: String, label: String, placeholder: String, isSecure: Bool, isOptional: Bool, defaultValue: String, options: [FieldOption] = [], allowCustomInput: Bool = false) {
         self.key = key
         self.label = label
         self.placeholder = placeholder
@@ -76,6 +82,7 @@ struct CredentialField: Sendable, Identifiable {
         self.isOptional = isOptional
         self.defaultValue = defaultValue
         self.options = options
+        self.allowCustomInput = allowCustomInput
     }
 }
 

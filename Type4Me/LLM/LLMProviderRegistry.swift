@@ -15,7 +15,6 @@ enum LLMProviderRegistry {
         .zhipu:       OpenAICompatibleLLMConfig<ZhipuLLMTag>.self,
         .claude:      ClaudeLLMConfig.self,
         .ollama:      OpenAICompatibleLLMConfig<OllamaLLMTag>.self,
-        .localQwen:   LocalQwenLLMConfig.self,
     ]
 
     static func configType(for provider: LLMProvider) -> (any LLMProviderConfig.Type)? {

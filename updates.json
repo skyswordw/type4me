@@ -1,6 +1,11 @@
 {
-  "latest": "1.6.2",
+  "latest": "1.6.3",
   "releases": [
+    {
+      "version": "1.6.3",
+      "date": "2026-04-03",
+      "notes": "- LLM 模型选择改为下拉预设 + 自定义输入，支持 10 个厂商常用模型\n- 删除 Local Qwen LLM provider，本地模型统一走 Ollama\n- 本地识别选项改名「SenseVoice 流式 + Qwen3 ASR 校准」，Cloud 版隐藏该选项\n- ASR/LLM 设置页密钥展示逻辑统一\n- SenseVoice 模型文件校验加固（检查存在 + 非零字节）\n- Qwen3-ASR 健康检查失败后主动终止进程"
+    },
     {
       "version": "1.6.2",
       "date": "2026-04-01",
