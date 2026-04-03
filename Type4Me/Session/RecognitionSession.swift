@@ -250,13 +250,8 @@ actor RecognitionSession {
             bypassProxy: ProxyBypassMode.current.bypassASR
         )
 
-        // Capture prompt context only when the current prompt actually needs it.
-        let llmProvider = needsLLM ? KeychainService.selectedLLMProvider : nil
-        if PrivacyPreferences.shouldCapturePromptContext(for: effectiveMode.prompt, llmProvider: llmProvider) {
-            promptContext = await PromptContext.capture()
-        } else {
-            promptContext = .empty
-        }
+        // Capture prompt context while the user's selection is still active.
+        promptContext = await PromptContext.capture()
         guard sessionGeneration == myGeneration else {
             DebugFileLogger.log("startRecording: zombie detected after capture, bailing")
             return
