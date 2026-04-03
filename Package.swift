@@ -10,7 +10,9 @@ let hasSherpaFramework = FileManager.default.fileExists(
 var targets: [Target] = [
     .executableTarget(
         name: "Type4Me",
-        dependencies: hasSherpaFramework ? ["SherpaOnnxLib"] : [],
+        dependencies: [
+            .product(name: "Supabase", package: "supabase-swift"),
+        ] + (hasSherpaFramework ? ["SherpaOnnxLib"] : []),
         path: "Type4Me",
         exclude: ["Resources"],
         cSettings: hasSherpaFramework ? [.headerSearchPath("Bridge")] : [],
@@ -40,5 +42,8 @@ if hasSherpaFramework {
 let package = Package(
     name: "Type4Me",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        .package(url: "https://github.com/supabase/supabase-swift", from: "2.0.0"),
+    ],
     targets: targets
 )
