@@ -12,6 +12,15 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    static func tabs(for edition: AppEdition?) -> [SettingsTab] {
+        switch edition {
+        case .member:
+            return [.general, .modes, .vocabulary, .history, .about]
+        case .byoKey, .none:
+            return allCases.map { $0 }
+        }
+    }
+
     var displayName: String {
         switch self {
         case .general:     return L("通用", "General")
@@ -53,6 +62,11 @@ struct SettingsView: View {
         .frame(minWidth: 700, minHeight: 480)
         .background(TF.settingsBg)
         .preferredColorScheme(.light)
+        .onAppear {
+            if selectedTab == .models && AppEditionMigration.current == .member {
+                selectedTab = .general
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToMode)) { note in
             selectedTab = .modes
             if let modeId = note.object as? UUID {
@@ -81,13 +95,18 @@ struct SettingsView: View {
 
             // Nav items
             VStack(spacing: 2) {
-                ForEach(SettingsTab.allCases) { tab in
+                ForEach(SettingsTab.tabs(for: AppEditionMigration.current)) { tab in
                     navItem(tab)
                 }
             }
             .padding(.horizontal, 10)
 
             Spacer()
+
+            // Bottom: edition card
+            SidebarEditionCard()
+                .padding(.horizontal, 10)
+                .padding(.bottom, 12)
         }
         .frame(width: 180)
         .background(TF.settingsBg)
@@ -135,7 +154,9 @@ struct SettingsView: View {
     private var content: some View {
         ZStack {
             tabPage(.general)    { GeneralSettingsTab() }
-            tabPage(.models)     { ModelSettingsTab() }
+            if AppEditionMigration.current != .member {
+                tabPage(.models) { ModelSettingsTab() }
+            }
             tabPage(.vocabulary) { VocabularyTab() }
             tabPage(.modes)      { ModesSettingsTab() }
             fixedPage(.history)  { HistoryTab(isActive: selectedTab == .history) }
