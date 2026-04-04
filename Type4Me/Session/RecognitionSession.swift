@@ -664,10 +664,11 @@ actor RecognitionSession {
                 : true
 
             // Run injection on a detached task to avoid blocking the actor with usleep().
-            // The actor yields cooperatively via withCheckedContinuation; .finalized is
-            // still emitted only after injection completes, preserving ordering.
+            // .finalized is emitted directly from the detached task so the UI updates
+            // immediately after paste, without waiting for actor re-scheduling.
             let engine = injectionEngine
             let aborted = injectionAborted
+            let onEvent = self.onASREvent
             let injectLog = "stop: injecting method=clipboard len=\(finalText.count) +\(ContinuousClock.now - stopT0)"
             let injectionOutcome: InjectionOutcome = await withCheckedContinuation { continuation in
                 Task.detached {
@@ -680,10 +681,14 @@ actor RecognitionSession {
                         DebugFileLogger.log(injectLog)
                         outcome = engine.inject(finalText)
                     }
+                    // Notify UI immediately from this thread, before actor resumes
+                    onEvent?(.finalized(text: finalText, injection: outcome))
+                    DebugFileLogger.log("stop: finalized emitted from injection task")
+                    // Clipboard restore can happen after UI is notified
+                    engine.finishClipboardRestore()
                     continuation.resume(returning: outcome)
                 }
             }
-            onASREvent?(.finalized(text: finalText, injection: injectionOutcome))
 
             // Cloud quota: refresh from server after LLM completes
             if isCloudMode {

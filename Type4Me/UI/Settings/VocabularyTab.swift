@@ -18,9 +18,6 @@ struct VocabularyTab: View {
     @State private var showBulkSnippetsSheet = false
     @State private var bulkSnippetsText = ""
 
-    // Smart Correction
-    @State private var showSmartCorrection = false
-
     // Sort
     @State private var hotwordSort: VocabSort = .byTime
     @State private var snippetSort: VocabSort = .byTime
@@ -44,6 +41,7 @@ struct VocabularyTab: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(TF.settingsText)
                 sortToggle($hotwordSort)
+                bulkEditButton { showBulkHotwordsSheet = true }
             }
             .padding(.bottom, 4)
 
@@ -71,22 +69,10 @@ struct VocabularyTab: View {
                     .onSubmit { addHotword() }
             }
 
-            HStack(spacing: 8) {
-                Text(L("回车添加，点 × 移除", "Press Enter to add, click x to remove"))
-                    .font(.system(size: 10))
-                    .foregroundStyle(TF.settingsTextTertiary)
-                Spacer()
-                Button {
-                    showBulkHotwordsSheet = true
-                } label: {
-                    Label(L("批量编辑", "Bulk Edit"), systemImage: "list.bullet.rectangle")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(TF.settingsAccentBlue)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.top, 4)
+            Text(L("回车添加，点 × 移除", "Press Enter to add, click x to remove"))
+                .font(.system(size: 10))
+                .foregroundStyle(TF.settingsTextTertiary)
+                .padding(.top, 4)
 
             // Module separator
             Spacer().frame(height: 20)
@@ -99,6 +85,7 @@ struct VocabularyTab: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(TF.settingsText)
                 sortToggle($snippetSort)
+                bulkEditButton { showBulkSnippetsSheet = true }
             }
             .padding(.bottom, 4)
 
@@ -129,25 +116,6 @@ struct VocabularyTab: View {
                 }
                 snippetGroupView(group: group)
             }
-
-            // Smart correction button
-            HStack(spacing: 6) {
-                Button {
-                    showSmartCorrection = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "wand.and.stars")
-                            .font(.system(size: 11))
-                        Text(L("智能纠错", "Smart Correction"))
-                            .font(.system(size: 12))
-                    }
-                    .foregroundStyle(TF.settingsAccentBlue)
-                }
-                .buttonStyle(.plain)
-                Spacer()
-            }
-            .padding(.top, 8)
-            .padding(.bottom, 4)
 
             SettingsDivider()
 
@@ -192,30 +160,12 @@ struct VocabularyTab: View {
             }
             .padding(.top, 8)
 
-            HStack(spacing: 8) {
-                Text(L("示例: \"hello@example.com\" ← \"我的邮箱\"", "Example: \"hello@example.com\" ← \"my email\""))
-                    .font(.system(size: 10))
-                    .foregroundStyle(TF.settingsTextTertiary)
-                Spacer()
-                Button {
-                    showBulkSnippetsSheet = true
-                } label: {
-                    Label(L("批量编辑", "Bulk Edit"), systemImage: "list.bullet.rectangle")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(TF.settingsAccentBlue)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.top, 6)
+            Text(L("示例: \"hello@example.com\" ← \"我的邮箱\"", "Example: \"hello@example.com\" ← \"my email\""))
+                .font(.system(size: 10))
+                .foregroundStyle(TF.settingsTextTertiary)
+                .padding(.top, 6)
 
             Spacer()
-        }
-        .sheet(isPresented: $showSmartCorrection) {
-            SmartCorrectionSheet {
-                snippets = SnippetStorage.load()
-                hotwords = HotwordStorage.load()
-            }
         }
         .onAppear {
             hotwords = HotwordStorage.load()
@@ -249,6 +199,19 @@ struct VocabularyTab: View {
                 Text(order.wrappedValue == .byTime
                      ? L("添加时间排序", "Sort by time added")
                      : L("首字母排序", "Sort alphabetically"))
+                    .font(.system(size: 10))
+            }
+            .foregroundStyle(TF.settingsAccentBlue)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func bulkEditButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: "list.bullet.rectangle")
+                    .font(.system(size: 9))
+                Text(L("批量编辑", "Bulk Edit"))
                     .font(.system(size: 10))
             }
             .foregroundStyle(TF.settingsAccentBlue)

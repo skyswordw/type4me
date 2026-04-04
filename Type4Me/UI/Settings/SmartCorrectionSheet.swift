@@ -1,5 +1,4 @@
 import SwiftUI
-import NaturalLanguage
 import AppKit
 
 struct SmartCorrectionSheet: View {
@@ -16,26 +15,24 @@ struct SmartCorrectionSheet: View {
 
     @State private var phase: Phase = .input
 
-    // MARK: - Input phase state
+    // MARK: - Input state
 
-    private enum InputMode: String, CaseIterable {
-        case manual, history
-    }
-
-    @State private var inputMode: InputMode = .manual
-    @State private var manualText: String = ""
-    @State private var historyRecords: [(id: String, date: Date, rawText: String)] = []
-    @State private var selectedHistoryId: String?
-    @State private var tokens: [String] = []
-    @State private var selectedTokens: Set<Int> = []
     @State private var correctText: String = ""
+    @State private var wrongText: String = ""
 
-    // MARK: - Generating phase state
+    // MARK: - History state
+
+    @State private var historyRecords: [(id: String, date: Date, rawText: String)] = []
+    @State private var expandedHistoryText: String? = nil
+    @State private var characters: [String] = []
+    @State private var selectedChars: Set<Int> = []
+
+    // MARK: - Generating state
 
     @State private var generationTask: Task<Void, Never>?
     @State private var errorMessage: String?
 
-    // MARK: - Preview phase state
+    // MARK: - Preview state
 
     @State private var snippetSuggestions: [VariantSuggestion] = []
     @State private var hotwordSuggestions: [HotwordSuggestion] = []
@@ -47,13 +44,18 @@ struct SmartCorrectionSheet: View {
     // MARK: - Computed
 
     private var selectedText: String {
-        selectedTokens.sorted().compactMap { idx in
-            idx < tokens.count ? tokens[idx] : nil
-        }.joined(separator: " ")
+        selectedChars.sorted().compactMap { idx in
+            idx < characters.count ? characters[idx] : nil
+        }.joined()
     }
 
     private var canGenerate: Bool {
-        !selectedText.isEmpty && !correctText.trimmingCharacters(in: .whitespaces).isEmpty
+        let correct = correctText.trimmingCharacters(in: .whitespaces)
+        guard !correct.isEmpty else { return false }
+        if expandedHistoryText != nil {
+            return !selectedChars.isEmpty
+        }
+        return !wrongText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private var selectedCount: Int {
@@ -65,22 +67,13 @@ struct SmartCorrectionSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Title
-            Text(L("智能纠正", "Smart Correction"))
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(TF.settingsText)
-                .padding(.bottom, 4)
-
-            Text(L("选择错误识别的文本，输入正确写法，AI 自动生成变体映射。",
-                    "Select misrecognized text, enter the correct form, and AI generates variant mappings."))
-                .font(.system(size: 11))
-                .foregroundStyle(TF.settingsTextTertiary)
-                .padding(.bottom, 16)
-
-            // Main content
             switch phase {
             case .input:
-                inputPhaseView
+                if expandedHistoryText != nil {
+                    historyDetailView
+                } else {
+                    mainInputView
+                }
             case .generating:
                 generatingPhaseView
             case .preview:
@@ -89,127 +82,127 @@ struct SmartCorrectionSheet: View {
 
             Spacer()
 
-            // Bottom buttons
-            SettingsDivider()
+            Divider().opacity(0.2)
             bottomButtons
-                .padding(.top, 8)
+                .padding(.top, TF.spacingMD)
         }
         .padding(20)
-        .frame(minWidth: 480, maxWidth: 480, minHeight: 400)
-        .onAppear {
-            loadHistory()
-        }
+        .frame(minWidth: 500, maxWidth: 500, minHeight: 480)
+        .background(TF.settingsCardAlt)
+        .onAppear { loadHistory() }
     }
 
-    // MARK: - Input Phase
+    // MARK: - Main Input View
 
-    @ViewBuilder
-    private var inputPhaseView: some View {
-        // Mode picker
-        Picker("", selection: $inputMode) {
-            Text(L("手动输入", "Manual Input")).tag(InputMode.manual)
-            Text(L("从历史记录", "From History")).tag(InputMode.history)
-        }
-        .pickerStyle(.segmented)
-        .frame(width: 240)
-        .padding(.bottom, 12)
-        .onChange(of: inputMode) { _, _ in
-            tokens = []
-            selectedTokens = []
-            errorMessage = nil
-        }
-
-        if inputMode == .manual {
-            manualInputView
-        } else {
-            historyInputView
-        }
-
-        // Word grid (after tokenization)
-        if !tokens.isEmpty {
-            SettingsDivider()
-            wordGridView
-                .padding(.top, 8)
-        }
-
-        // Correct form input
-        if !tokens.isEmpty {
-            correctFormView
-                .padding(.top, 12)
-        }
-
-        // Error message from last generation attempt
-        if let errorMessage {
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.orange)
-                Text(errorMessage)
-                    .font(.system(size: 11))
-                    .foregroundStyle(TF.settingsTextSecondary)
-            }
-            .padding(.top, 8)
-        }
-    }
-
-    private var manualInputView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField(L("输入被错误识别的文本...", "Enter misrecognized text..."), text: $manualText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(TF.settingsTextTertiary.opacity(0.3), lineWidth: 1)
-                )
-                .onSubmit { tokenize(manualText) }
-
-            Button {
-                tokenize(manualText)
-            } label: {
-                HStack(spacing: 4) {
-                    Text(L("分词", "Tokenize"))
-                        .font(.system(size: 12))
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 10))
-                }
-                .foregroundStyle(TF.settingsAccentBlue)
-            }
-            .buttonStyle(.plain)
-            .disabled(manualText.trimmingCharacters(in: .whitespaces).isEmpty)
-        }
-    }
-
-    private var historyInputView: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                if historyRecords.isEmpty {
-                    Text(L("暂无历史记录", "No history records"))
-                        .font(.system(size: 12))
+    private var mainInputView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Close
+            HStack {
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
                         .foregroundStyle(TF.settingsTextTertiary)
-                        .padding(.vertical, 20)
-                        .frame(maxWidth: .infinity)
-                } else {
-                    ForEach(historyRecords, id: \.id) { record in
-                        historyRow(record)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, TF.spacingSM)
+
+            // Title
+            Text(L("告诉我有什么词识别得不对", "Tell me what was misrecognized"))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(TF.settingsText)
+                .padding(.bottom, TF.spacingLG)
+
+            // Correct form
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("你希望识别出来的词", "WORD YOU EXPECTED").uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(TF.settingsTextTertiary)
+                TextField("", text: $correctText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(TF.settingsBg))
+            }
+            .padding(.bottom, TF.spacingMD)
+
+            // Wrong text
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("实际识别出来的词", "WORD ACTUALLY RECOGNIZED").uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(TF.settingsTextTertiary)
+                TextField("", text: $wrongText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(TF.settingsBg))
+            }
+
+            if let errorMessage {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(TF.settingsAccentAmber)
+                    Text(errorMessage)
+                        .font(.system(size: 11))
+                        .foregroundStyle(TF.settingsTextSecondary)
+                }
+                .padding(.top, TF.spacingSM)
+            }
+
+            // Divider
+            Divider().opacity(0.2).padding(.vertical, TF.spacingLG)
+
+            // History section
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(TF.settingsAccentAmber)
+                Text(L("或者从历史记录里选", "OR PICK FROM HISTORY").uppercased())
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(TF.settingsTextTertiary)
+            }
+            .padding(.bottom, TF.spacingSM)
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if historyRecords.isEmpty {
+                        Text(L("暂无历史记录", "No history records"))
+                            .font(.system(size: 12))
+                            .foregroundStyle(TF.settingsTextTertiary)
+                            .padding(.vertical, 20)
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        ForEach(historyRecords, id: \.id) { record in
+                            historyRow(record)
+                        }
                     }
                 }
             }
+            .background(RoundedRectangle(cornerRadius: 8).fill(TF.settingsBg))
         }
-        .frame(maxHeight: 160)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(TF.settingsTextTertiary.opacity(0.2), lineWidth: 1)
-        )
     }
+
+    // MARK: - History Row
 
     private func historyRow(_ record: (id: String, date: Date, rawText: String)) -> some View {
         Button {
-            selectedHistoryId = record.id
-            tokenize(record.rawText)
+            let chars = record.rawText
+                .map { String($0) }
+                .filter { $0.rangeOfCharacter(from: .whitespacesAndNewlines) == nil }
+            withAnimation(TF.springSnappy) {
+                expandedHistoryText = record.rawText
+                characters = chars
+                selectedChars = []
+            }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: TF.spacingSM) {
                 Text(record.rawText)
                     .font(.system(size: 12))
                     .foregroundStyle(TF.settingsText)
@@ -221,90 +214,127 @@ struct SmartCorrectionSheet: View {
                     .font(.system(size: 10))
                     .foregroundStyle(TF.settingsTextTertiary)
 
-                if selectedHistoryId == record.id {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(TF.settingsAccentGreen)
-                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9))
+                    .foregroundStyle(TF.settingsTextTertiary)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(
-            selectedHistoryId == record.id
-                ? TF.settingsAccentBlue.opacity(0.08)
-                : Color.clear
-        )
     }
 
-    private var wordGridView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(L("点击选择错误词:", "Click to select wrong words:"))
+    // MARK: - History Detail View
+
+    private var historyDetailView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Top bar
+            HStack {
+                Button {
+                    withAnimation(TF.springSnappy) {
+                        expandedHistoryText = nil
+                        characters = []
+                        selectedChars = []
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(L("返回", "Back"))
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(TF.settingsAccentBlue)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(TF.settingsTextTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, TF.spacingLG)
+
+            // Correct form
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("你希望识别出来的词", "WORD YOU EXPECTED").uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(TF.settingsTextTertiary)
+                TextField("", text: $correctText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(TF.settingsBg))
+            }
+            .padding(.bottom, TF.spacingLG)
+
+            // Character grid
+            Text(L("点击选择识别错误的字:", "Tap the misrecognized characters:"))
                 .font(.system(size: 11))
                 .foregroundStyle(TF.settingsTextTertiary)
+                .padding(.bottom, TF.spacingSM)
 
             WrappingHStack(spacing: 6) {
-                ForEach(Array(tokens.enumerated()), id: \.offset) { index, token in
-                    tokenTag(token, index: index)
+                ForEach(Array(characters.enumerated()), id: \.offset) { index, char in
+                    charTag(char, index: index)
                 }
             }
 
-            if !selectedTokens.isEmpty {
-                Text(L("选中: \(selectedText)", "Selected: \(selectedText)"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(TF.settingsTextSecondary)
+            if !selectedChars.isEmpty {
+                HStack(spacing: TF.spacingXS) {
+                    Text(L("选中:", "Selected:"))
+                        .foregroundStyle(TF.settingsTextTertiary)
+                    Text(selectedText)
+                        .foregroundStyle(TF.settingsAccentAmber)
+                }
+                .font(.system(size: 11))
+                .padding(.top, TF.spacingSM)
+            }
+
+            if let errorMessage {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(TF.settingsAccentAmber)
+                    Text(errorMessage)
+                        .font(.system(size: 11))
+                        .foregroundStyle(TF.settingsTextSecondary)
+                }
+                .padding(.top, TF.spacingSM)
             }
         }
     }
 
-    private func tokenTag(_ token: String, index: Int) -> some View {
-        let isSelected = selectedTokens.contains(index)
+    private func charTag(_ char: String, index: Int) -> some View {
+        let isSelected = selectedChars.contains(index)
         return Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                if isSelected {
-                    selectedTokens.remove(index)
-                } else {
-                    selectedTokens.insert(index)
-                }
+            withAnimation(TF.easeQuick) {
+                if isSelected { selectedChars.remove(index) }
+                else { selectedChars.insert(index) }
             }
         } label: {
-            Text(token)
-                .font(.system(size: 12))
+            Text(char)
+                .font(.system(size: 14))
+                .frame(width: 32, height: 32)
                 .foregroundStyle(isSelected ? .white : TF.settingsText)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isSelected ? TF.settingsAccentBlue : TF.settingsBg)
+                    RoundedRectangle(cornerRadius: TF.cornerSM)
+                        .fill(isSelected ? TF.settingsAccentAmber : TF.settingsBg)
                 )
         }
         .buttonStyle(.plain)
-    }
-
-    private var correctFormView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(L("正确写法:", "Correct form:"))
-                .font(.system(size: 11))
-                .foregroundStyle(TF.settingsTextTertiary)
-
-            TextField(L("输入正确的文字...", "Enter the correct text..."), text: $correctText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(TF.settingsTextTertiary.opacity(0.3), lineWidth: 1)
-                )
-        }
     }
 
     // MARK: - Generating Phase
 
     private var generatingPhaseView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: TF.spacingMD) {
             Spacer()
             ProgressView()
                 .scaleEffect(0.8)
@@ -313,26 +343,41 @@ struct SmartCorrectionSheet: View {
                 .foregroundStyle(TF.settingsTextSecondary)
             Spacer()
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 200)
     }
 
     // MARK: - Preview Phase
 
     @ViewBuilder
     private var previewPhaseView: some View {
+        HStack {
+            Spacer()
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(TF.settingsTextTertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.bottom, TF.spacingSM)
+
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                // Snippets section
+            VStack(alignment: .leading, spacing: TF.spacingMD) {
+                // Snippets
                 HStack {
-                    Text(L("片段替换建议", "Snippet Suggestions"))
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(TF.settingsText)
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.left.arrow.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(TF.settingsAccentAmber)
+                        Text(L("片段替换建议", "SNIPPET SUGGESTIONS").uppercased())
+                            .font(.system(size: 11, weight: .semibold))
+                            .tracking(1.2)
+                            .foregroundStyle(TF.settingsTextTertiary)
+                    }
 
                     Spacer()
 
-                    Button {
-                        selectAllSnippets()
-                    } label: {
+                    Button { selectAllSnippets() } label: {
                         Text(L("全选", "Select All"))
                             .font(.system(size: 11))
                             .foregroundStyle(TF.settingsAccentBlue)
@@ -344,29 +389,49 @@ struct SmartCorrectionSheet: View {
                     Text(L("没有生成片段建议", "No snippet suggestions generated"))
                         .font(.system(size: 12))
                         .foregroundStyle(TF.settingsTextTertiary)
+                        .padding(.vertical, TF.spacingSM)
                 } else {
-                    ForEach(Array(snippetSuggestions.enumerated()), id: \.element.id) { index, suggestion in
-                        snippetRow(index: index, suggestion: suggestion)
+                    VStack(spacing: 0) {
+                        ForEach(Array(snippetSuggestions.enumerated()), id: \.element.id) { index, suggestion in
+                            if index > 0 { Divider().opacity(0.15) }
+                            snippetRow(index: index, suggestion: suggestion)
+                        }
                     }
+                    .padding(TF.spacingMD)
+                    .background(
+                        RoundedRectangle(cornerRadius: TF.cornerMD).fill(TF.settingsBg)
+                    )
                 }
 
-                // Hotwords section
+                // Hotwords
                 if !hotwordSuggestions.isEmpty {
-                    SettingsDivider()
-
-                    Text(L("热词建议", "Hotword Suggestions"))
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(TF.settingsText)
-
-                    ForEach(Array(hotwordSuggestions.enumerated()), id: \.element.id) { index, suggestion in
-                        hotwordRow(index: index, suggestion: suggestion)
+                    HStack(spacing: 6) {
+                        Image(systemName: "text.badge.star")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(TF.settingsAccentAmber)
+                        Text(L("热词建议", "HOTWORD SUGGESTIONS").uppercased())
+                            .font(.system(size: 11, weight: .semibold))
+                            .tracking(1.2)
+                            .foregroundStyle(TF.settingsTextTertiary)
                     }
+                    .padding(.top, TF.spacingSM)
+
+                    VStack(spacing: 0) {
+                        ForEach(Array(hotwordSuggestions.enumerated()), id: \.element.id) { index, suggestion in
+                            if index > 0 { Divider().opacity(0.15) }
+                            hotwordRow(index: index, suggestion: suggestion)
+                        }
+                    }
+                    .padding(TF.spacingMD)
+                    .background(
+                        RoundedRectangle(cornerRadius: TF.cornerMD).fill(TF.settingsBg)
+                    )
 
                     if !hotwordReason.isEmpty {
                         Text(hotwordReason)
                             .font(.system(size: 10))
                             .foregroundStyle(TF.settingsTextTertiary)
-                            .padding(.top, 2)
+                            .padding(.top, TF.spacingXS)
                     }
                 }
             }
@@ -374,7 +439,7 @@ struct SmartCorrectionSheet: View {
     }
 
     private func snippetRow(index: Int, suggestion: VariantSuggestion) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: TF.spacingSM) {
             Toggle("", isOn: Binding(
                 get: { suggestion.isSelected },
                 set: { snippetSuggestions[index].isSelected = $0 }
@@ -391,27 +456,18 @@ struct SmartCorrectionSheet: View {
                 .foregroundStyle(TF.settingsTextTertiary)
 
             Text(suggestion.replacement)
-                .font(.system(size: 12))
-                .foregroundStyle(suggestion.isDuplicate ? TF.settingsTextTertiary : TF.settingsTextSecondary)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(suggestion.isDuplicate ? TF.settingsTextTertiary : TF.settingsAccentBlue)
 
-            if suggestion.isDuplicate {
-                Text(L("已存在", "Exists"))
-                    .font(.system(size: 10))
-                    .foregroundStyle(TF.settingsTextTertiary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4).fill(TF.settingsBg)
-                    )
-            }
+            if suggestion.isDuplicate { duplicateBadge }
 
             Spacer()
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
     }
 
     private func hotwordRow(index: Int, suggestion: HotwordSuggestion) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: TF.spacingSM) {
             Toggle("", isOn: Binding(
                 get: { suggestion.isSelected },
                 set: { hotwordSuggestions[index].isSelected = $0 }
@@ -423,97 +479,122 @@ struct SmartCorrectionSheet: View {
                 .font(.system(size: 12))
                 .foregroundStyle(suggestion.isDuplicate ? TF.settingsTextTertiary : TF.settingsText)
 
-            if suggestion.isDuplicate {
-                Text(L("已存在", "Exists"))
-                    .font(.system(size: 10))
-                    .foregroundStyle(TF.settingsTextTertiary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4).fill(TF.settingsBg)
-                    )
-            }
+            if suggestion.isDuplicate { duplicateBadge }
 
             Spacer()
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
+    }
+
+    private var duplicateBadge: some View {
+        Text(L("已存在", "Exists"))
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(TF.settingsTextTertiary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: TF.cornerSM).fill(TF.settingsCardAlt)
+            )
     }
 
     // MARK: - Bottom Buttons
 
     @ViewBuilder
     private var bottomButtons: some View {
-        HStack {
+        HStack(spacing: TF.spacingMD) {
             switch phase {
             case .input:
-                Button(L("取消", "Cancel")) { dismiss() }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(TF.settingsTextTertiary)
-                    .keyboardShortcut(.cancelAction)
-
                 Spacer()
+
+                Button { dismiss() } label: {
+                    Text(L("取消", "Cancel"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(TF.settingsTextSecondary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
 
                 Button {
                     startGeneration()
                 } label: {
                     HStack(spacing: 4) {
-                        Text("✨")
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 11))
                         Text(L("生成变体", "Generate Variants"))
                     }
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 7)
                     .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(canGenerate ? TF.settingsAccentBlue : TF.settingsTextTertiary.opacity(0.3))
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(canGenerate ? TF.settingsAccentAmber : TF.settingsTextTertiary.opacity(0.3))
                     )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(!canGenerate)
                 .keyboardShortcut(.defaultAction)
 
             case .generating:
-                Button(L("取消", "Cancel")) {
+                Spacer()
+
+                Button {
                     generationTask?.cancel()
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        phase = .input
-                    }
+                    withAnimation(TF.easeQuick) { phase = .input }
                     errorMessage = nil
+                } label: {
+                    Text(L("取消", "Cancel"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(TF.settingsTextSecondary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(TF.settingsTextTertiary)
-
-                Spacer()
 
             case .preview:
-                Button(L("返回修改", "Back to Edit")) {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        phase = .input
-                    }
+                Button {
+                    withAnimation(TF.easeQuick) { phase = .input }
+                } label: {
+                    Text(L("返回修改", "Back to Edit"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(TF.settingsAccentBlue)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(TF.settingsAccentBlue)
-
-                Button(L("取消", "Cancel")) { dismiss() }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(TF.settingsTextTertiary)
-                    .keyboardShortcut(.cancelAction)
 
                 Spacer()
+
+                Button { dismiss() } label: {
+                    Text(L("取消", "Cancel"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(TF.settingsTextSecondary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
 
                 Button {
                     saveAndDismiss()
                 } label: {
                     Text(L("添加选中项 (\(selectedCount))", "Add Selected (\(selectedCount))"))
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 7)
                         .background(
-                            RoundedRectangle(cornerRadius: 6)
+                            RoundedRectangle(cornerRadius: 8)
                                 .fill(selectedCount > 0 ? TF.settingsAccentGreen : TF.settingsTextTertiary.opacity(0.3))
                         )
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(selectedCount == 0)
@@ -532,35 +613,19 @@ struct SmartCorrectionSheet: View {
         }
     }
 
-    private func tokenize(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-
-        let tokenizer = NLTokenizer(unit: .word)
-        tokenizer.string = trimmed
-
-        var result: [String] = []
-        tokenizer.enumerateTokens(in: trimmed.startIndex..<trimmed.endIndex) { range, _ in
-            result.append(String(trimmed[range]))
-            return true
-        }
-
-        withAnimation(.easeInOut(duration: 0.15)) {
-            tokens = result
-            selectedTokens = Set(result.indices)  // select all by default
-        }
-    }
-
     private func startGeneration() {
         guard canGenerate else { return }
         errorMessage = nil
 
-        withAnimation(.easeInOut(duration: 0.15)) {
-            phase = .generating
+        let wrong: String
+        if expandedHistoryText != nil {
+            wrong = selectedText
+        } else {
+            wrong = wrongText.trimmingCharacters(in: .whitespaces)
         }
-
-        let wrong = selectedText
         let correct = correctText.trimmingCharacters(in: .whitespaces)
+
+        withAnimation(TF.easeQuick) { phase = .generating }
 
         generationTask = Task {
             do {
@@ -572,18 +637,14 @@ struct SmartCorrectionSheet: View {
                     snippetSuggestions = result.snippets
                     hotwordSuggestions = result.hotwords
                     hotwordReason = result.hotwordReason
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        phase = .preview
-                    }
+                    withAnimation(TF.easeQuick) { phase = .preview }
                 }
             } catch {
                 if Task.isCancelled { return }
 
                 await MainActor.run {
                     errorMessage = error.localizedDescription
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        phase = .input
-                    }
+                    withAnimation(TF.easeQuick) { phase = .input }
                 }
             }
         }
@@ -608,7 +669,6 @@ struct SmartCorrectionSheet: View {
         }
         HotwordStorage.save(currentHotwords)
 
-        // Trigger reload
         if let url = URL(string: "type4me://reload-vocabulary") {
             NSWorkspace.shared.open(url)
         }
