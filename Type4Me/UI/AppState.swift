@@ -320,6 +320,11 @@ final class AppState {
         set { UserDefaults.standard.set(newValue, forKey: "tf_hasCompletedSetup") }
     }
 
+    var appEdition: AppEdition? {
+        get { AppEditionMigration.current }
+        set { AppEditionMigration.current = newValue }
+    }
+
     init() {
         let modes = ModeStorage().load()
         availableModes = modes
