@@ -1,6 +1,11 @@
 {
-  "latest": "1.8.0",
+  "latest": "1.8.1",
   "releases": [
+    {
+      "version": "1.8.1",
+      "date": "2026-04-07",
+      "notes": "- 修复 ElevenLabs 录音结束后最长延迟 5 秒才注入文字的问题\n- 修复 ElevenLabs 流式识别累积模式下文字重复的问题\n- 百炼 ASR 新增 Base URL 配置项，支持国际版端点"
+    },
     {
       "version": "1.8.0",
       "date": "2026-04-06",
