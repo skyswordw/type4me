@@ -237,7 +237,7 @@ Steps 2-3 are optional. Skipping them disables local ASR, but cloud ASR works fi
 > Update: Official [Vocabulary Management Skill](https://github.com/joewongjc/type4me-vocab-skill) to dramatically improve recognition accuracy
 
 <p align="center">
-  <img src="docs/images/header-combined.svg" width="100%" alt="Type4Me - macOS Voice Input" />
+  <img src="docs/images/header-combined-en.svg" width="100%" alt="Type4Me - macOS Voice Input" />
 </p>
 
 
