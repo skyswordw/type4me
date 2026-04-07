@@ -104,6 +104,7 @@ actor RecognitionSession {
     private var audioChunkContinuation: AsyncStream<Data>.Continuation?
     private var audioChunkSenderTask: Task<Void, Never>?
     private var uploadFailureFlag: UploadFailureFlag?
+    private var lastStreamingError: Error?
 
     // MARK: - Prompt context (selected text + clipboard captured at recording start)
 
@@ -153,6 +154,7 @@ actor RecognitionSession {
         hasEmittedReadyForCurrentSession = false
         injectionAborted = false
         pendingLLMError = nil
+        lastStreamingError = nil
         state = .starting
 
         // Load credentials for selected provider
@@ -514,13 +516,21 @@ actor RecognitionSession {
         // use whatever streaming produced rather than re-sending everything.
         let uploadFailed = uploadFailureFlag?.failed == true
         let hasUsableStreamingResult = !currentTranscript.confirmedSegments.isEmpty
-        let needsBatchFallback = uploadFailed || (!asrTeardownClean && !hasUsableStreamingResult)
-        if !asrTeardownClean && !uploadFailed && hasUsableStreamingResult {
+        let streamingFailed = Self.shouldAttemptBatchFallback(
+            uploadFailed: uploadFailed,
+            asrTeardownClean: asrTeardownClean,
+            streamingError: lastStreamingError
+        )
+        let needsBatchFallback = streamingFailed
+            && (uploadFailed || lastStreamingError != nil || !hasUsableStreamingResult)
+        if streamingFailed && !needsBatchFallback {
             DebugFileLogger.log("stop: drain timeout but streaming has confirmed text, skipping batch fallback")
         }
         if needsBatchFallback {
             let partialText = currentTranscript.composedText
-            DebugFileLogger.log("stop: streaming failed (partial=\(partialText.count) chars, uploadFailed=\(uploadFailed)), attempting batch fallback")
+            DebugFileLogger.log(
+                "stop: streaming failed (partial=\(partialText.count) chars, uploadFailed=\(uploadFailed), hasStreamingError=\(lastStreamingError != nil)), attempting batch fallback"
+            )
             let fullAudio = audioEngine.getRecordedAudio()
             if !fullAudio.isEmpty, let config = currentConfig {
                 onASREvent?(.processingResult(text: partialText.isEmpty ? "重新识别中..." : partialText))
@@ -538,6 +548,7 @@ actor RecognitionSession {
             }
         }
         uploadFailureFlag = nil
+        lastStreamingError = nil
 
         // Combine confirmed segments + any trailing unconfirmed partial.
         let effectiveText = currentTranscript.displayText
@@ -767,6 +778,7 @@ actor RecognitionSession {
             }
 
         case .error(let error):
+            lastStreamingError = error
             logger.error("ASR error: \(error)")
 
         case .completed:
@@ -991,6 +1003,14 @@ actor RecognitionSession {
         }
     }
 
+    static func shouldAttemptBatchFallback(
+        uploadFailed: Bool,
+        asrTeardownClean: Bool,
+        streamingError: Error?
+    ) -> Bool {
+        uploadFailed || !asrTeardownClean || streamingError != nil
+    }
+
     // MARK: - Batch Fallback
 
     /// Try to transcribe full audio via the same provider.
@@ -1115,6 +1135,8 @@ actor RecognitionSession {
         currentTranscript = .empty
         hasEmittedReadyForCurrentSession = false
         currentConfig = nil
+        uploadFailureFlag = nil
+        lastStreamingError = nil
         SystemVolumeManager.restore()
     }
 
