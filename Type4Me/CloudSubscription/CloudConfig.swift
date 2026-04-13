@@ -11,7 +11,7 @@ enum CloudConfig {
     // API endpoints
     // TODO: switch to domain names before release (cn.api.type4me.com / us.api.type4me.com)
     static let cnAPIEndpoint = "http://115.190.217.85"
-    static let usAPIEndpoint = "http://115.190.217.85"
+    static let usAPIEndpoint = "http://149.248.20.226"
 
     // Pricing display
     static let weeklyPriceCN = "¥7"
