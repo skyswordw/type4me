@@ -41,6 +41,7 @@ struct AccountTab: View, SettingsCardHelpers {
         } else {
             loginView
         }
+
     }
 
     // MARK: - Login View
@@ -477,4 +478,5 @@ struct AccountTab: View, SettingsCardHelpers {
             ? "¥\(String(format: "%.2f", amount))"
             : "$\(String(format: "%.2f", amount))"
     }
+
 }

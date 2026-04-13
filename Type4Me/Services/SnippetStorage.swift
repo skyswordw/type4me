@@ -278,19 +278,94 @@ enum SnippetStorage {
         #endif
     }
 
+    // MARK: - App-specific snippets
+
+    /// Registered app for per-app snippet overrides.
+    struct AppInfo: Codable, Identifiable, Equatable {
+        let bundleId: String
+        let name: String
+        var id: String { bundleId }
+    }
+
+    // MARK: - App-specific file paths
+
+    private static var appSnippetsDir: URL {
+        appSupportDir.appendingPathComponent("app-snippets")
+    }
+
+    private static var registryFileURL: URL {
+        appSnippetsDir.appendingPathComponent("registry.json")
+    }
+
+    private static func appSnippetFileURL(bundleId: String) -> URL {
+        appSnippetsDir.appendingPathComponent("\(bundleId).json")
+    }
+
+    // MARK: - Registry CRUD
+
+    static func loadRegistry() -> [AppInfo] {
+        guard let data = try? Data(contentsOf: registryFileURL),
+              let apps = try? JSONDecoder().decode([AppInfo].self, from: data)
+        else { return [] }
+        return apps
+    }
+
+    static func saveRegistry(_ apps: [AppInfo]) {
+        let dir = registryFileURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(apps) else { return }
+        try? data.write(to: registryFileURL, options: .atomic)
+    }
+
+    static func addApp(_ app: AppInfo) {
+        var apps = loadRegistry()
+        guard !apps.contains(where: { $0.bundleId == app.bundleId }) else { return }
+        apps.append(app)
+        saveRegistry(apps)
+    }
+
+    static func removeApp(bundleId: String) {
+        var apps = loadRegistry()
+        apps.removeAll { $0.bundleId == bundleId }
+        saveRegistry(apps)
+        // Delete the per-app snippet file
+        try? FileManager.default.removeItem(at: appSnippetFileURL(bundleId: bundleId))
+        // Invalidate this app's compiled cache
+        appCacheLock.withLock { $0.removeValue(forKey: bundleId) }
+    }
+
+    // MARK: - Per-app snippet load/save
+
+    static func loadAppSnippets(bundleId: String) -> [(trigger: String, value: String)] {
+        return readFile(appSnippetFileURL(bundleId: bundleId))
+    }
+
+    static func saveAppSnippets(_ snippets: [(trigger: String, value: String)], bundleId: String) {
+        writeFile(snippets, to: appSnippetFileURL(bundleId: bundleId))
+        appCacheLock.withLock { $0.removeValue(forKey: bundleId) }
+        NotificationCenter.default.post(name: didChangeNotification, object: nil)
+    }
+
     // MARK: - Compiled cache
 
     private struct CompiledRule {
         let regex: NSRegularExpression
+        let pattern: String   // original flex pattern (for conflict detection)
         let template: String  // pre-escaped replacement
     }
 
-    /// Thread-safe compiled rules cache. Rebuilt only when snippets change.
+    /// Thread-safe compiled rules cache for global snippets. Rebuilt only when snippets change.
     private static let cacheLock = OSAllocatedUnfairLock(initialState: [CompiledRule]?(nil))
+
+    /// Thread-safe compiled rules cache for per-app snippets, keyed by bundleId.
+    private static let appCacheLock = OSAllocatedUnfairLock(initialState: [String: [CompiledRule]]())
 
     /// Call after saving either file to force recompilation on next apply.
     static func invalidateCache() {
         cacheLock.withLock { $0 = nil }
+        appCacheLock.withLock { $0.removeAll() }
         fileCacheLock.lock()
         cachedBuiltin = nil
         cachedUser = nil
@@ -304,9 +379,22 @@ enum SnippetStorage {
         let rules = allSnippets.compactMap { snippet -> CompiledRule? in
             let pattern = buildFlexPattern(snippet.trigger)
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
-            return CompiledRule(regex: regex, template: NSRegularExpression.escapedTemplate(for: snippet.value))
+            return CompiledRule(regex: regex, pattern: pattern, template: NSRegularExpression.escapedTemplate(for: snippet.value))
         }
         cacheLock.withLock { $0 = rules }
+        return rules
+    }
+
+    private static func compiledAppRules(bundleId: String) -> [CompiledRule] {
+        if let cached = appCacheLock.withLock({ $0[bundleId] }) { return cached }
+        let snippets = loadAppSnippets(bundleId: bundleId)
+
+        let rules = snippets.compactMap { snippet -> CompiledRule? in
+            let pattern = buildFlexPattern(snippet.trigger)
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+            return CompiledRule(regex: regex, pattern: pattern, template: NSRegularExpression.escapedTemplate(for: snippet.value))
+        }
+        appCacheLock.withLock { $0[bundleId] = rules }
         return rules
     }
 
@@ -316,6 +404,38 @@ enum SnippetStorage {
     static func applyEffective(to text: String) -> String {
         var result = text
         for rule in compiledRules() {
+            result = rule.regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: rule.template
+            )
+        }
+        return result
+    }
+
+    /// Apply global + app-specific snippets. App rules win on trigger conflict.
+    static func applyEffective(to text: String, bundleId: String?) -> String {
+        guard let bundleId, !bundleId.isEmpty else { return applyEffective(to: text) }
+
+        let appRules = compiledAppRules(bundleId: bundleId)
+        guard !appRules.isEmpty else { return applyEffective(to: text) }
+
+        // Collect app rule patterns for conflict detection
+        let appPatterns = Set(appRules.map(\.pattern))
+
+        // Apply global rules first, skipping any that conflict with app rules
+        var result = text
+        for rule in compiledRules() {
+            if appPatterns.contains(rule.pattern) { continue }
+            result = rule.regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: rule.template
+            )
+        }
+
+        // Then apply app-specific rules (higher priority)
+        for rule in appRules {
             result = rule.regex.stringByReplacingMatches(
                 in: result,
                 range: NSRange(result.startIndex..., in: result),

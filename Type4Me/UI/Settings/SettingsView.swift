@@ -12,6 +12,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     #if HAS_CLOUD_SUBSCRIPTION
     case account
     #endif
+    #if HAS_CLOUD_SUBSCRIPTION
+    case debug
+    #endif
 
     var id: String { rawValue }
 
@@ -36,6 +39,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .about:       return L("关于", "About")
         #if HAS_CLOUD_SUBSCRIPTION
         case .account:     return L("账户", "Account")
+        case .debug:       return "Debug"
         #endif
         }
     }
@@ -50,6 +54,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .about:       return L("版本、许可证与支持", "Version, license & support")
         #if HAS_CLOUD_SUBSCRIPTION
         case .account:     return L("登录与订阅管理", "Login & subscription")
+        case .debug:       return "Region, endpoints & diagnostics"
         #endif
         }
     }
@@ -147,6 +152,12 @@ struct SettingsView: View {
             Spacer()
 
             #if HAS_CLOUD_SUBSCRIPTION
+            if DebugTab.isEnabled {
+                navItem(.debug)
+                    .padding(.horizontal, 10)
+            }
+            #endif
+            #if HAS_CLOUD_SUBSCRIPTION
             if edition == .member {
                 navItem(.account)
                     .padding(.horizontal, 10)
@@ -216,6 +227,11 @@ struct SettingsView: View {
             #if HAS_CLOUD_SUBSCRIPTION
             if edition == .member {
                 tabPage(.account) { AccountTab() }
+            }
+            #endif
+            #if HAS_CLOUD_SUBSCRIPTION
+            if DebugTab.isEnabled {
+                tabPage(.debug) { DebugTab() }
             }
             #endif
         }
