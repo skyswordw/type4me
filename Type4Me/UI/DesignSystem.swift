@@ -48,17 +48,17 @@ enum TF {
 
     // MARK: Settings Palette
 
-    static let settingsBg = Color(red: 0.95, green: 0.92, blue: 0.88)
-    static let settingsCard = Color(red: 0.98, green: 0.96, blue: 0.93)
-    static let settingsCardAlt = Color(red: 0.91, green: 0.89, blue: 0.85)
-    static let settingsNavActive = Color(red: 0.10, green: 0.10, blue: 0.10)
-    static let settingsText = Color(red: 0.10, green: 0.10, blue: 0.10)
-    static let settingsTextSecondary = Color(red: 0.24, green: 0.24, blue: 0.24)
-    static let settingsTextTertiary = Color(red: 0.42, green: 0.42, blue: 0.42)
-    static let settingsAccentGreen = Color(red: 0.30, green: 0.62, blue: 0.35)
-    static let settingsAccentAmber = Color(red: 0.78, green: 0.55, blue: 0.15)
-    static let settingsAccentRed = Color(red: 0.80, green: 0.28, blue: 0.22)
-    static let settingsAccentBlue = Color(red: 0.20, green: 0.45, blue: 0.75)
+    static let settingsBg = Color(nsColor: .controlBackgroundColor)
+    static let settingsCard = Color(nsColor: .windowBackgroundColor)
+    static let settingsCardAlt = Color(nsColor: .quaternaryLabelColor).opacity(0.16)
+    static let settingsNavActive = Color.accentColor
+    static let settingsText = Color.primary
+    static let settingsTextSecondary = Color.secondary
+    static let settingsTextTertiary = Color(nsColor: .tertiaryLabelColor)
+    static let settingsAccentGreen = Color(nsColor: .systemGreen)
+    static let settingsAccentAmber = amber
+    static let settingsAccentRed = Color(nsColor: .systemRed)
+    static let settingsAccentBlue = Color(nsColor: .systemBlue)
 
     // MARK: Spacing
 

@@ -59,7 +59,12 @@ extension SettingsCardHelpers {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(TF.settingsBg)
+                .fill(.background)
+                .shadow(color: .black.opacity(0.04), radius: 1, x: 0, y: 1)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(TF.settingsTextTertiary.opacity(0.16), lineWidth: 1)
         )
     }
 
@@ -71,8 +76,8 @@ extension SettingsCardHelpers {
                 .foregroundStyle(TF.settingsTextTertiary)
             FixedWidthTextField(text: text, placeholder: prompt)
                 .padding(.horizontal, 12)
-                .frame(height: 36)
-                .background(RoundedRectangle(cornerRadius: 8).fill(TF.settingsCardAlt))
+                .frame(height: 28)
+                .background(RoundedRectangle(cornerRadius: 6).fill(TF.settingsCardAlt))
         }
         .padding(.vertical, 6)
     }
@@ -99,8 +104,8 @@ extension SettingsCardHelpers {
                 .foregroundStyle(TF.settingsTextTertiary)
             FixedWidthSecureField(text: text, placeholder: prompt)
                 .padding(.horizontal, 12)
-                .frame(height: 36)
-                .background(RoundedRectangle(cornerRadius: 8).fill(TF.settingsCardAlt))
+                .frame(height: 28)
+                .background(RoundedRectangle(cornerRadius: 6).fill(TF.settingsCardAlt))
         }
         .padding(.vertical, 6)
     }
@@ -126,9 +131,9 @@ extension SettingsCardHelpers {
                                 Spacer()
                             }
                             .padding(.horizontal, 12)
-                            .frame(height: 36)
+                            .frame(height: 28)
                             .background(
-                                RoundedRectangle(cornerRadius: 8)
+                                RoundedRectangle(cornerRadius: 6)
                                     .fill(TF.settingsCardAlt)
                             )
                         }
@@ -145,7 +150,6 @@ extension SettingsCardHelpers {
 
     // MARK: - Custom Controls
 
-    /// Custom dropdown that matches the design mockup (rounded rect + chevron).
     func settingsDropdown(selection: Binding<String>, options: [(value: String, label: String)], icon: String? = nil) -> some View {
         let currentLabel = options.first(where: { $0.value == selection.wrappedValue })?.label ?? selection.wrappedValue
         return Menu {
@@ -173,44 +177,22 @@ extension SettingsCardHelpers {
                     .foregroundStyle(TF.settingsTextTertiary)
             }
             .padding(.horizontal, 12)
-            .frame(height: 36)
+            .frame(height: 28)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 6)
                     .fill(TF.settingsCardAlt)
             )
         }
         .buttonStyle(.plain)
     }
 
-    /// Custom segmented picker with dark selected pill.
     func settingsSegmentedPicker(selection: Binding<String>, options: [(value: String, label: String)]) -> some View {
-        HStack(spacing: 0) {
+        Picker("", selection: selection) {
             ForEach(options, id: \.value) { option in
-                let isSelected = selection.wrappedValue == option.value
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        selection.wrappedValue = option.value
-                    }
-                } label: {
-                    Text(option.label)
-                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                        .foregroundStyle(isSelected ? .white : TF.settingsText)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(isSelected ? TF.settingsNavActive : .clear)
-                        )
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                Text(option.label).tag(option.value)
             }
         }
-        .padding(3)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(TF.settingsCardAlt)
-        )
+        .pickerStyle(.segmented)
     }
 
     func primaryButton(_ title: String, action: @escaping () -> Void) -> some View {
@@ -220,7 +202,7 @@ extension SettingsCardHelpers {
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8).fill(TF.settingsAccentAmber))
+            .background(RoundedRectangle(cornerRadius: 6).fill(TF.settingsAccentAmber))
             .contentShape(Rectangle())
     }
 
@@ -231,7 +213,7 @@ extension SettingsCardHelpers {
             .foregroundStyle(TF.settingsText)
             .padding(.horizontal, 16)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8).fill(TF.settingsCardAlt))
+            .background(RoundedRectangle(cornerRadius: 6).fill(TF.settingsCardAlt))
             .contentShape(Rectangle())
     }
 

@@ -232,129 +232,42 @@ struct HistoryTab: View {
                     .padding(.bottom, TF.spacingMD)
             }
 
-            // Search + date filter + selection + export.
-            //
-            // Visual baseline: every control in this row locks to
-            // `toolbarHeight` (30pt) and uses 12pt type so the search
-            // baseline and the button baselines sit on a single line. The
-            // previous layout mixed 12pt/11pt and 7pt/6pt vertical padding,
-            // which made button text read "smaller and floating" next to
-            // the search box.
-            HStack(spacing: 8) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12))
-                        .foregroundStyle(TF.settingsTextTertiary)
-                    TextField(L("搜索记录...", "Search..."), text: $searchText)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12))
-                }
-                .padding(.horizontal, 10)
-                .frame(height: toolbarHeight)
-                .background(
-                    RoundedRectangle(cornerRadius: 6).fill(TF.settingsBg)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(TF.settingsTextTertiary.opacity(0.2), lineWidth: 1)
-                )
-
-                // Date filter menu
-                Menu {
-                    let presets: [DateFilter] = [.all, .today, .yesterday, .thisWeek, .thisMonth]
-                    ForEach(presets, id: \.self) { filter in
-                        Button {
-                            dateFilter = filter
-                        } label: {
-                            if dateFilter == filter {
-                                Label(filter.label, systemImage: "checkmark")
-                            } else {
-                                Text(filter.label)
-                            }
+            HistoryToolbar(
+                searchText: $searchText,
+                dateFilter: $dateFilter,
+                showCustomRange: $showCustomRange,
+                isSelectionMode: Binding(
+                    get: { isSelectionMode },
+                    set: { newValue in
+                        isSelectionMode = newValue
+                        if !newValue {
+                            selectedIds.removeAll()
                         }
                     }
-                    Divider()
-                    Button {
-                        showCustomRange = true
-                    } label: {
-                        if case .custom = dateFilter {
-                            Label(L("自定义范围...", "Custom range..."), systemImage: "checkmark")
-                        } else {
-                            Text(L("自定义范围...", "Custom range..."))
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "calendar").font(.system(size: 11))
-                        Text(dateFilter.label).font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundStyle(dateFilter == .all ? TF.settingsTextSecondary : TF.settingsNavActive)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .padding(.horizontal, 10)
-                .frame(height: toolbarHeight)
-                .background(RoundedRectangle(cornerRadius: 6).fill(TF.settingsBg))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(dateFilter == .all
-                            ? TF.settingsTextTertiary.opacity(0.2)
-                            : TF.settingsNavActive.opacity(0.4),
-                        lineWidth: 1)
-                )
-                .popover(isPresented: $showCustomRange, arrowEdge: .bottom) {
-                    customRangePopover
-                }
-
-                Button {
-                    if isSelectionMode {
-                        isSelectionMode = false
-                        selectedIds.removeAll()
-                    } else {
-                        isSelectionMode = true
-                    }
-                } label: {
-                    Text(isSelectionMode ? L("完成", "Done") : L("选择", "Select"))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(TF.settingsTextSecondary)
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 10)
-                .frame(height: toolbarHeight)
-                .background(RoundedRectangle(cornerRadius: 6).fill(TF.settingsBg))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(TF.settingsTextTertiary.opacity(0.2), lineWidth: 1)
-                )
-                .disabled(records.isEmpty)
-
-                Button {
-                    showExportPopover = true
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "square.and.arrow.up").font(.system(size: 11))
-                        Text(L("导出", "Export")).font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundStyle(TF.settingsTextSecondary)
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 10)
-                .frame(height: toolbarHeight)
-                .background(RoundedRectangle(cornerRadius: 6).fill(TF.settingsBg))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(TF.settingsTextTertiary.opacity(0.2), lineWidth: 1)
-                )
-                .disabled(records.isEmpty || isSelectionMode)
-                .popover(isPresented: $showExportPopover, arrowEdge: .bottom) {
-                    exportPopover
-                }
+                ),
+                showExportPopover: $showExportPopover,
+                recordsIsEmpty: records.isEmpty,
+                toolbarHeight: toolbarHeight
+            ) {
+                customRangePopover
+            } exportPopover: {
+                exportPopover
             }
             .padding(.bottom, isSelectionMode ? 8 : 12)
 
             if isSelectionMode && !records.isEmpty {
-                batchSelectionBar
+                HistoryBatchSelectionBar(
+                    selectedCount: selectedIds.count,
+                    isAllFilteredSelected: isAllFilteredSelected,
+                    isListEmpty: sections.isEmpty,
+                    onToggleSelectAll: {
+                        selectedIds = HistorySelectionHelpers.togglingSelectAllInFiltered(
+                            filteredIds: visibleIds,
+                            selectedIds: selectedIds
+                        )
+                    },
+                    onDelete: { showBatchDeleteConfirm = true }
+                )
                     .padding(.bottom, 12)
             }
 
@@ -371,11 +284,19 @@ struct HistoryTab: View {
                         ForEach(sections) { section in
                             Section {
                                 ForEach(section.records) { record in
-                                    recordCard(
-                                        record,
+                                    HistoryRecordCard(
+                                        record: record,
                                         showDate: false,
                                         isSelectionMode: isSelectionMode,
                                         isSelected: selectedIds.contains(record.id),
+                                        copiedId: $copiedId,
+                                        onCorrect: { correctionRecord = record },
+                                        onDelete: {
+                                            Task {
+                                                await historyStore.delete(id: record.id)
+                                                records.removeAll { $0.id == record.id }
+                                            }
+                                        },
                                         onToggleSelection: { toggleSelection(for: record.id) }
                                     )
                                     .padding(.bottom, 8)
@@ -454,53 +375,6 @@ struct HistoryTab: View {
                 )
             )
         }
-    }
-
-    private var batchSelectionBar: some View {
-        HStack(spacing: 12) {
-            Text(L("已选 \(selectedIds.count) 条", "\(selectedIds.count) selected"))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(TF.settingsTextSecondary)
-
-            Spacer()
-
-            Button {
-                selectedIds = HistorySelectionHelpers.togglingSelectAllInFiltered(
-                    filteredIds: visibleIds,
-                    selectedIds: selectedIds
-                )
-            } label: {
-                Text(
-                    isAllFilteredSelected
-                        ? L("取消全选", "Deselect All")
-                        : L("全选当前列表", "Select All in List")
-                )
-                .font(.system(size: 12, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(TF.settingsNavActive)
-            .disabled(sections.isEmpty)
-
-            Button {
-                showBatchDeleteConfirm = true
-            } label: {
-                Text(L("删除", "Delete"))
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(TF.settingsAccentRed)
-            .disabled(selectedIds.isEmpty)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(TF.settingsBg)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(TF.settingsTextTertiary.opacity(0.2), lineWidth: 1)
-                )
-        )
     }
 
     private func performBatchDelete() async {
@@ -755,129 +629,6 @@ struct HistoryTab: View {
             return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
         return field
-    }
-
-    // MARK: - Record Card
-
-    private func recordCard(
-        _ record: HistoryRecord,
-        showDate: Bool,
-        isSelectionMode: Bool,
-        isSelected: Bool,
-        onToggleSelection: @escaping () -> Void
-    ) -> some View {
-        let metadataAndText = VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                let timeFormat: Date.FormatStyle = showDate
-                    ? .dateTime.month().day().hour().minute()
-                    : .dateTime.hour().minute()
-                Label(record.createdAt.formatted(timeFormat), systemImage: "clock")
-                Label(String(format: "%.1fs", record.durationSeconds), systemImage: "waveform")
-                if let chars = record.characterCount {
-                    Label(L("\(chars) 字", "\(chars) chars"), systemImage: "doc.text")
-                }
-                if let mode = record.processingMode {
-                    Label(mode, systemImage: "text.bubble")
-                }
-                if let provider = record.asrProvider {
-                    Label(provider, systemImage: "mic")
-                }
-                Spacer()
-            }
-            .font(.system(size: 10))
-            .foregroundStyle(TF.settingsTextTertiary)
-
-            Text(record.finalText)
-                .font(.system(size: 12))
-                .foregroundStyle(TF.settingsText)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if record.processedText != nil {
-                HStack(alignment: .top, spacing: 4) {
-                    Text(L("原始:", "Raw:"))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(TF.settingsTextTertiary)
-                    Text(record.rawText)
-                        .font(.system(size: 11))
-                        .foregroundStyle(TF.settingsTextSecondary)
-                        .textSelection(.enabled)
-                }
-            }
-
-            if !isSelectionMode {
-                HStack(spacing: 8) {
-                    Spacer()
-
-                    Button {
-                        correctionRecord = record
-                    } label: {
-                        Label(L("纠错", "Correct"), systemImage: "character.textbox")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(TF.settingsAccentAmber)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(record.finalText, forType: .string)
-                        copiedId = record.id
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            if copiedId == record.id { copiedId = nil }
-                        }
-                    } label: {
-                        Label(
-                            copiedId == record.id ? L("已复制", "Copied") : L("复制", "Copy"),
-                            systemImage: copiedId == record.id ? "checkmark" : "doc.on.doc"
-                        )
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(copiedId == record.id ? TF.settingsAccentGreen : TF.settingsTextSecondary)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        Task {
-                            await historyStore.delete(id: record.id)
-                            records.removeAll { $0.id == record.id }
-                        }
-                    } label: {
-                        Label(L("删除", "Delete"), systemImage: "trash")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(TF.settingsAccentRed.opacity(0.7))
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-
-        return Group {
-            if isSelectionMode {
-                HStack(alignment: .top, spacing: 10) {
-                    Toggle("", isOn: Binding(
-                        get: { isSelected },
-                        set: { new in
-                            if new != isSelected { onToggleSelection() }
-                        }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.checkbox)
-
-                    metadataAndText
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .onTapGesture { onToggleSelection() }
-                }
-            } else {
-                metadataAndText
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 8).fill(TF.settingsBg)
-        )
     }
 
     // MARK: - Statistics UI

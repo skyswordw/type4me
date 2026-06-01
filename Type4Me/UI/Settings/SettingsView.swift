@@ -58,6 +58,21 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         #endif
         }
     }
+
+    var systemImage: String {
+        switch self {
+        case .general:    return "gearshape"
+        case .models:     return "waveform"
+        case .vocabulary: return "textformat"
+        case .modes:      return "slider.horizontal.3"
+        case .history:    return "clock.arrow.circlepath"
+        case .about:      return "info.circle"
+        #if HAS_CLOUD_SUBSCRIPTION
+        case .account:    return "person.crop.circle"
+        case .debug:      return "ladybug"
+        #endif
+        }
+    }
 }
 
 // MARK: - Settings View
@@ -66,6 +81,7 @@ struct SettingsView: View {
 
     @Environment(AppState.self) private var appState
     @State private var selectedTab: SettingsTab = .general
+    @State private var pendingVocabularyReplacement: String?
     @AppStorage("tf_language") private var language = AppLanguage.systemDefault
     #if HAS_CLOUD_SUBSCRIPTION
     @State private var showDeviceConflict = false
@@ -74,15 +90,14 @@ struct SettingsView: View {
     #endif
 
     var body: some View {
-        HStack(spacing: 0) {
+        NavigationSplitView {
             sidebar
-            Divider()
+        } detail: {
             content
         }
         .id(language)
-        .frame(minWidth: 700, minHeight: 480)
-        .background(TF.settingsBg)
-        .preferredColorScheme(.light)
+        .frame(minWidth: 780, minHeight: 520)
+        .navigationSplitViewStyle(.balanced)
         #if HAS_CLOUD_SUBSCRIPTION
         .onAppear {
             if (selectedTab == .models && edition == .member) ||
@@ -109,162 +124,174 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .navigateToMode)) { note in
             selectedTab = .modes
             if let modeId = note.object as? UUID {
-                NotificationCenter.default.post(name: .selectMode, object: modeId)
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .selectMode, object: modeId)
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToHistory)) { _ in
             selectedTab = .history
         }
-        .onReceive(NotificationCenter.default.publisher(for: .navigateToVocabulary)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToVocabulary)) { note in
+            if selectedTab != .vocabulary, let replacement = note.object as? String {
+                pendingVocabularyReplacement = replacement
+            }
             selectedTab = .vocabulary
+        }
+        .onChange(of: selectedTab) { _, newValue in
+            if newValue == .about {
+                UpdateChecker.shared.markAsSeen(appState: appState)
+            }
         }
     }
 
     // MARK: - Sidebar
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Brand
-            VStack(alignment: .leading, spacing: 2) {
-                Text("TYPE4ME")
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(2)
-                    .foregroundStyle(TF.settingsTextTertiary)
-                Text(L("偏好设置", "Preferences"))
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(TF.settingsText)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-
-            // Nav items
-            VStack(spacing: 2) {
+        VStack(spacing: 0) {
+            List(selection: selectedTabBinding) {
+                Section {
                 #if HAS_CLOUD_SUBSCRIPTION
                 ForEach(SettingsTab.tabs(for: edition)) { tab in
-                    navItem(tab)
+                    SettingsSidebarRow(
+                        tab: tab,
+                        showBadge: tab == .about && appState.hasUnseenUpdate
+                    )
+                    .tag(tab)
                 }
                 #else
                 ForEach(SettingsTab.allCases) { tab in
-                    navItem(tab)
+                    SettingsSidebarRow(
+                        tab: tab,
+                        showBadge: tab == .about && appState.hasUnseenUpdate
+                    )
+                    .tag(tab)
+                }
+                #endif
+                } header: {
+                    Text(L("偏好设置", "Preferences"))
+                }
+
+                #if HAS_CLOUD_SUBSCRIPTION
+                if (DebugTab.isEnabled && edition == .member) || edition == .member {
+                    Section {
+                        if DebugTab.isEnabled && edition == .member {
+                            SettingsSidebarRow(tab: .debug, showBadge: false)
+                                .tag(SettingsTab.debug)
+                        }
+                        if edition == .member {
+                            SettingsSidebarRow(tab: .account, showBadge: false)
+                                .tag(SettingsTab.account)
+                        }
+                    }
                 }
                 #endif
             }
-            .padding(.horizontal, 10)
-
-            Spacer()
+            .listStyle(.sidebar)
 
             #if HAS_CLOUD_SUBSCRIPTION
-            if DebugTab.isEnabled && edition == .member {
-                navItem(.debug)
-                    .padding(.horizontal, 10)
-            }
-            #endif
-            #if HAS_CLOUD_SUBSCRIPTION
-            if edition == .member {
-                navItem(.account)
-                    .padding(.horizontal, 10)
-            }
             EditionSwitchLink()
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 12)
                 .padding(.bottom, 12)
             #endif
         }
-        .frame(width: 180)
-        .background(TF.settingsBg)
+        .navigationTitle("Type4Me")
+        .navigationSplitViewColumnWidth(min: 180, ideal: 205, max: 240)
     }
 
-    private func navItem(_ tab: SettingsTab) -> some View {
-        let isActive = selectedTab == tab
-        let showBadge = tab == .about && appState.hasUnseenUpdate
-        return Button {
-            selectedTab = tab
-            if tab == .about {
-                UpdateChecker.shared.markAsSeen(appState: appState)
+    private var selectedTabBinding: Binding<SettingsTab?> {
+        Binding(
+            get: { selectedTab },
+            set: { if let tab = $0 { selectedTab = tab } }
+        )
+    }
+
+    // MARK: - Content
+
+    @ViewBuilder
+    private var content: some View {
+        switch selectedTab {
+        case .general:
+            tabPage { GeneralSettingsTab() }
+        case .models:
+            #if HAS_CLOUD_SUBSCRIPTION
+            if edition == .member {
+                tabPage { GeneralSettingsTab() }
+            } else {
+                tabPage { ModelSettingsTab() }
             }
-        } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tab.displayName)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isActive ? .white : TF.settingsText)
-                    Text(tab.subtitle)
-                        .font(.system(size: 10))
-                        .foregroundStyle(isActive ? .white.opacity(0.7) : TF.settingsTextTertiary)
-                }
-                Spacer()
+            #else
+            tabPage { ModelSettingsTab() }
+            #endif
+        case .vocabulary:
+            tabPage { VocabularyTab(pendingHighlightReplacement: $pendingVocabularyReplacement) }
+        case .modes:
+            fixedPage { ModesSettingsTab() }
+        case .history:
+            fixedPage { HistoryTab(isActive: selectedTab == .history) }
+        case .about:
+            tabPage { AboutTab() }
+        #if HAS_CLOUD_SUBSCRIPTION
+        case .account:
+            if edition == .member {
+                tabPage { AccountTab() }
+            } else {
+                tabPage { GeneralSettingsTab() }
+            }
+        case .debug:
+            if DebugTab.isEnabled && edition == .member {
+                tabPage { DebugTab() }
+            } else {
+                tabPage { GeneralSettingsTab() }
+            }
+        #endif
+        }
+    }
+
+    private func tabPage<V: View>(@ViewBuilder content: () -> V) -> some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 0) {
+                content()
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .background(TF.settingsCard)
+        .navigationTitle(selectedTab.displayName)
+    }
+
+    private func fixedPage<V: View>(@ViewBuilder content: () -> V) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content()
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(TF.settingsCard)
+        .navigationTitle(selectedTab.displayName)
+    }
+}
+
+private struct SettingsSidebarRow: View {
+    let tab: SettingsTab
+    let showBadge: Bool
+
+    var body: some View {
+        Label {
+            HStack(spacing: 6) {
+                Text(tab.displayName)
+                    .font(.system(size: 13))
                 if showBadge {
                     Circle()
                         .fill(.red)
                         .frame(width: 7, height: 7)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isActive ? TF.settingsNavActive : .clear)
-            )
+        } icon: {
+            Image(systemName: tab.systemImage)
+                .symbolRenderingMode(.hierarchical)
         }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Content
-
-    private var content: some View {
-        ZStack {
-            tabPage(.general)    { GeneralSettingsTab() }
-            #if HAS_CLOUD_SUBSCRIPTION
-            if edition != .member {
-                tabPage(.models) { ModelSettingsTab() }
-            }
-            #else
-            tabPage(.models)     { ModelSettingsTab() }
-            #endif
-            tabPage(.vocabulary) { VocabularyTab() }
-            fixedPage(.modes)    { ModesSettingsTab() }
-            fixedPage(.history)  { HistoryTab(isActive: selectedTab == .history) }
-            tabPage(.about)      { AboutTab() }
-            #if HAS_CLOUD_SUBSCRIPTION
-            if edition == .member {
-                tabPage(.account) { AccountTab() }
-            }
-            #endif
-            #if HAS_CLOUD_SUBSCRIPTION
-            if DebugTab.isEnabled && edition == .member {
-                tabPage(.debug) { DebugTab() }
-            }
-            #endif
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(TF.settingsCard)
-    }
-
-    /// Scrollable tab page (most tabs).
-    private func tabPage<V: View>(_ tab: SettingsTab, @ViewBuilder content: () -> V) -> some View {
-        ScrollView(.vertical, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 0) {
-                content()
-            }
-            .padding(28)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .opacity(selectedTab == tab ? 1 : 0)
-        .allowsHitTesting(selectedTab == tab)
-    }
-
-    /// Fixed-height tab page (no outer scroll, content manages its own scroll).
-    private func fixedPage<V: View>(_ tab: SettingsTab, @ViewBuilder content: () -> V) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            content()
-        }
-        .padding(28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .opacity(selectedTab == tab ? 1 : 0)
-        .allowsHitTesting(selectedTab == tab)
+        .help(tab.subtitle)
     }
 }
 

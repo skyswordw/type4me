@@ -1,96 +1,12 @@
 import SwiftUI
 
-/// Chrome-style tab shape with concave bottom corners.
-///
-/// The shape is split into two zones:
-/// - **Body** (top portion): the visible tab, with convex rounded top corners
-/// - **Feet** (bottom portion, height = footRadius): extends wider than the body,
-///   connected by concave quarter-circle arcs
-///
-///       ╭──────────────╮
-///       │   Tab Text   │
-///    ╭──╯              ╰──╮
-///    ╰────────────────────╯   ← flat bottom, sits on content area
-///
-private struct ChromeTabShape: Shape {
-    var topRadius: CGFloat = 8
-    var footRadius: CGFloat = 6
-    var skipLeftFoot: Bool = false
-    /// Extra height on left side to cover content area's top-left corner
-    var leftExtraBottom: CGFloat = 0
-
-    func path(in rect: CGRect) -> Path {
-        let w = rect.width
-        let h = rect.height
-        let tr = min(topRadius, (h - footRadius) / 2)
-        let fr = min(footRadius, h / 3)
-
-        return Path { p in
-            if skipLeftFoot {
-                // No left foot: straight left edge, extends below to cover corner gap
-                let leftBottom = h + leftExtraBottom
-                p.move(to: CGPoint(x: 0, y: leftBottom))
-                p.addLine(to: CGPoint(x: 0, y: tr))
-
-                // Top-left corner (convex)
-                p.addArc(
-                    center: CGPoint(x: tr, y: tr),
-                    radius: tr,
-                    startAngle: .degrees(180),
-                    endAngle: .degrees(270),
-                    clockwise: false
-                )
-            } else {
-                // Left foot with concave arc
-                p.move(to: CGPoint(x: 0, y: h))
-                p.addArc(
-                    center: CGPoint(x: 0, y: h - fr),
-                    radius: fr,
-                    startAngle: .degrees(90),
-                    endAngle: .degrees(0),
-                    clockwise: true
-                )
-                p.addLine(to: CGPoint(x: fr, y: tr))
-
-                // Top-left corner (convex)
-                p.addArc(
-                    center: CGPoint(x: fr + tr, y: tr),
-                    radius: tr,
-                    startAngle: .degrees(180),
-                    endAngle: .degrees(270),
-                    clockwise: false
-                )
-            }
-
-            // Top edge
-            let rightBodyX = w - fr - tr
-            p.addLine(to: CGPoint(x: rightBodyX, y: 0))
-
-            // Top-right corner (convex)
-            p.addArc(
-                center: CGPoint(x: rightBodyX, y: tr),
-                radius: tr,
-                startAngle: .degrees(270),
-                endAngle: .degrees(0),
-                clockwise: false
-            )
-
-            // Right side down to right foot
-            p.addLine(to: CGPoint(x: w - fr, y: h - fr))
-
-            // Right foot: concave arc
-            p.addArc(
-                center: CGPoint(x: w, y: h - fr),
-                radius: fr,
-                startAngle: .degrees(180),
-                endAngle: .degrees(90),
-                clockwise: true
-            )
-        }
-    }
-}
-
 struct VocabularyTab: View {
+
+    @Binding var pendingHighlightReplacement: String?
+
+    init(pendingHighlightReplacement: Binding<String?> = .constant(nil)) {
+        _pendingHighlightReplacement = pendingHighlightReplacement
+    }
 
     // Hotwords (user file)
     @State private var hotwords: [String] = HotwordStorage.load()
@@ -191,11 +107,9 @@ struct VocabularyTab: View {
                 .foregroundStyle(TF.settingsTextTertiary)
                 .padding(.bottom, 8)
 
-            // Tab bar (Chrome-style: feet sit on top of content area)
             appScopeBar()
-                .zIndex(1)
+                .padding(.bottom, 8)
 
-            // Content area
             VStack(alignment: .leading, spacing: 0) {
                 // Add new row
                 HStack(spacing: 8) {
@@ -267,31 +181,29 @@ struct VocabularyTab: View {
             .padding(.top, 10)
             .padding(.bottom, 8)
             .background(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: selectedAppScope == nil ? 0 : 10,
-                    bottomLeadingRadius: 10,
-                    bottomTrailingRadius: 10,
-                    topTrailingRadius: 10
-                )
-                .fill(TF.settingsBg)
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(.background)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(TF.settingsTextTertiary.opacity(0.16), lineWidth: 1)
             )
 
             Spacer()
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToVocabulary)) { note in
             guard let replacement = note.object as? String else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                withAnimation(.easeInOut(duration: 0.4)) {
-                    proxy.scrollTo("snippet-\(replacement)", anchor: .center)
-                }
-                withAnimation(.easeIn(duration: 0.3).delay(0.2)) {
-                    highlightedGroup = replacement
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    withAnimation(.easeOut(duration: 0.8)) {
-                        highlightedGroup = nil
-                    }
-                }
+            scrollToReplacement(replacement, proxy: proxy)
+        }
+        .onChange(of: pendingHighlightReplacement) { _, replacement in
+            guard let replacement else { return }
+            pendingHighlightReplacement = nil
+            scrollToReplacement(replacement, proxy: proxy)
+        }
+        .onAppear {
+            if let replacement = pendingHighlightReplacement {
+                pendingHighlightReplacement = nil
+                scrollToReplacement(replacement, proxy: proxy)
             }
         }
         } // ScrollViewReader
@@ -558,19 +470,16 @@ struct VocabularyTab: View {
 
     private func appScopeBar() -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                // Global tab (with SF Symbol globe icon)
-                appScopeTab(
+            HStack(spacing: 6) {
+                appScopeButton(
                     label: L("全局生效", "Global"),
                     bundleId: nil,
                     icon: nil,
-                    systemIcon: "globe",
-                    isFirst: true
+                    systemIcon: "globe"
                 )
 
-                // Per-app tabs
                 ForEach(registeredApps) { app in
-                    appScopeTab(
+                    appScopeButton(
                         label: app.name,
                         bundleId: app.bundleId,
                         icon: appIcon(for: app.bundleId)
@@ -584,7 +493,6 @@ struct VocabularyTab: View {
                     }
                 }
 
-                // Separator + add button (Chrome-style)
                 Divider()
                     .frame(height: 14)
                     .padding(.horizontal, 8)
@@ -595,17 +503,19 @@ struct VocabularyTab: View {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(TF.settingsTextTertiary)
-                        .frame(width: 20, height: 20)
+                        .frame(width: 26, height: 26)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
+                .help(L("添加应用范围", "Add app scope"))
             }
+            .padding(3)
+            .background(TF.settingsCardAlt, in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
-    private func appScopeTab(label: String, bundleId: String?, icon: NSImage?, systemIcon: String? = nil, isFirst: Bool = false) -> some View {
+    private func appScopeButton(label: String, bundleId: String?, icon: NSImage?, systemIcon: String? = nil) -> some View {
         let isSelected = selectedAppScope == bundleId
-        let fr: CGFloat = 6
         return Button {
             switchScope(to: bundleId)
         } label: {
@@ -622,7 +532,6 @@ struct VocabularyTab: View {
                     .font(.system(size: 12))
                     .lineLimit(1)
 
-                // Close button on selected app tabs (not global)
                 if isSelected && bundleId != nil {
                     Button {
                         deletingAppBundleId = bundleId
@@ -634,22 +543,12 @@ struct VocabularyTab: View {
                     .buttonStyle(.plain)
                 }
             }
-            .foregroundStyle(isSelected ? TF.settingsText : TF.settingsTextTertiary)
-            .padding(.horizontal, 14)
-            .padding(.top, isSelected ? 11 : 6)
-            .padding(.bottom, isSelected ? 5 : 6)
-            // Foot space: left foot only if not first tab
-            .padding(.leading, isSelected && !isFirst ? fr : 0)
-            .padding(.trailing, isSelected ? fr : 0)
-            .padding(.bottom, isSelected ? fr : 0)
-            .zIndex(isSelected ? 1 : 0)
+            .foregroundStyle(isSelected ? TF.settingsText : TF.settingsTextSecondary)
+            .padding(.horizontal, 10)
+            .frame(height: 26)
             .background(
-                Group {
-                    if isSelected {
-                        ChromeTabShape(topRadius: 8, footRadius: fr, skipLeftFoot: isFirst)
-                            .fill(TF.settingsBg)
-                    }
-                }
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isSelected ? Color(nsColor: .controlBackgroundColor) : .clear)
             )
         }
         .buttonStyle(.plain)
@@ -804,6 +703,22 @@ struct VocabularyTab: View {
         saveCurrentSnippets()
         newTrigger = ""
         newValue = ""
+    }
+
+    private func scrollToReplacement(_ replacement: String, proxy: ScrollViewProxy) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            withAnimation(.easeInOut(duration: 0.4)) {
+                proxy.scrollTo("snippet-\(replacement)", anchor: .center)
+            }
+            withAnimation(.easeIn(duration: 0.3).delay(0.2)) {
+                highlightedGroup = replacement
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                withAnimation(.easeOut(duration: 0.8)) {
+                    highlightedGroup = nil
+                }
+            }
+        }
     }
 
     // MARK: - Bulk Hotwords Sheet
@@ -1019,4 +934,3 @@ struct VocabularyTab: View {
     }
 
 }
-
