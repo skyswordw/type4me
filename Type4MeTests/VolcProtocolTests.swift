@@ -143,13 +143,56 @@ final class VolcProtocolTests: XCTestCase {
         )
         let json = try JSONSerialization.jsonObject(with: payload) as? [String: Any]
         let request = try XCTUnwrap(json?["request"] as? [String: Any])
-        let contextString = try XCTUnwrap(request["context"] as? String)
+        let corpus = try XCTUnwrap(request["corpus"] as? [String: Any])
+        let contextString = try XCTUnwrap(corpus["context"] as? String)
         let contextData = try XCTUnwrap(contextString.data(using: .utf8))
         let context = try JSONSerialization.jsonObject(with: contextData) as? [String: Any]
         let hotwords = try XCTUnwrap(context?["hotwords"] as? [[String: Any]])
         XCTAssertEqual(hotwords.count, 2)
         XCTAssertEqual(hotwords.first?["word"] as? String, "Type4Me")
-        XCTAssertNil(request["corpus"])
+        XCTAssertNil(request["context"])
+    }
+
+    func testMakeHandshakeRequest_usesNewConsoleAPIKeyHeaders() throws {
+        let config = try XCTUnwrap(VolcanoASRConfig(credentials: [
+            "apiKey": "volc_api_key",
+            "resourceId": VolcanoASRConfig.resourceIdSeedASR,
+        ]))
+
+        let request = VolcASRClient.makeHandshakeRequest(
+            config: config,
+            connectId: "connect-123"
+        )
+        let headers = request.allHTTPHeaderFields
+
+        XCTAssertEqual(headers?["X-Api-Key"], "volc_api_key")
+        XCTAssertNil(headers?["X-Api-App-Key"])
+        XCTAssertNil(headers?["X-Api-Access-Key"])
+        XCTAssertEqual(headers?["X-Api-Resource-Id"], VolcanoASRConfig.resourceIdSeedASR)
+        XCTAssertEqual(headers?["X-Api-Request-Id"], "connect-123")
+        XCTAssertEqual(headers?["X-Api-Connect-Id"], "connect-123")
+        XCTAssertEqual(headers?["X-Api-Sequence"], "-1")
+    }
+
+    func testMakeHandshakeRequest_usesLegacyHeadersWhenNoAPIKey() throws {
+        let config = try XCTUnwrap(VolcanoASRConfig(credentials: [
+            "appKey": "app-id",
+            "accessKey": "access-token",
+            "resourceId": VolcanoASRConfig.resourceIdBigASR,
+        ]))
+
+        let request = VolcASRClient.makeHandshakeRequest(
+            config: config,
+            connectId: "connect-legacy"
+        )
+        let headers = request.allHTTPHeaderFields
+
+        XCTAssertNil(headers?["X-Api-Key"])
+        XCTAssertEqual(headers?["X-Api-App-Key"], "app-id")
+        XCTAssertEqual(headers?["X-Api-Access-Key"], "access-token")
+        XCTAssertEqual(headers?["X-Api-Resource-Id"], VolcanoASRConfig.resourceIdBigASR)
+        XCTAssertEqual(headers?["X-Api-Request-Id"], "connect-legacy")
+        XCTAssertEqual(headers?["X-Api-Sequence"], "-1")
     }
 
     // MARK: - Full Message Encoding
@@ -327,6 +370,32 @@ final class VolcProtocolTests: XCTestCase {
             }
             XCTAssertEqual(code, 1001)
             XCTAssertEqual(msg, "auth failed")
+        }
+    }
+
+    func testDecodeServerMessage_newServerErrorFrame() throws {
+        let messageText = "invalid api key"
+        let messageData = try XCTUnwrap(messageText.data(using: .utf8))
+        let header = VolcHeader(
+            messageType: .serverError,
+            flags: .noSequence,
+            serialization: .json,
+            compression: .none
+        )
+        var message = header.encode()
+        var code = UInt32(45000001).bigEndian
+        var size = UInt32(messageData.count).bigEndian
+        message.append(Data(bytes: &code, count: 4))
+        message.append(Data(bytes: &size, count: 4))
+        message.append(messageData)
+
+        XCTAssertThrowsError(try VolcProtocol.decodeServerMessage(message)) { error in
+            guard case VolcProtocolError.serverError(let code, let msg) = error else {
+                XCTFail("Expected serverError, got \(error)")
+                return
+            }
+            XCTAssertEqual(code, 45000001)
+            XCTAssertEqual(msg, messageText)
         }
     }
 

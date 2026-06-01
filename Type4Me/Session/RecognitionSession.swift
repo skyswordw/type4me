@@ -321,6 +321,22 @@ actor RecognitionSession {
             config = savedConfig
             NSLog("[Session] Loaded %@ credentials from file store", provider.rawValue)
         } else if provider == .volcano,
+                  let apiKey = ProcessInfo.processInfo.environment["VOLC_API_KEY"] {
+            // Env var fallback (volcano only, for dev convenience)
+            let resourceId = ProcessInfo.processInfo.environment["VOLC_RESOURCE_ID"] ?? VolcanoASRConfig.resourceIdSeedASR
+            let volcConfig = VolcanoASRConfig(credentials: [
+                "apiKey": apiKey, "resourceId": resourceId,
+            ])!
+            do {
+                try KeychainService.saveASRCredentials(for: .volcano, values: [
+                    "apiKey": apiKey, "resourceId": resourceId,
+                ])
+                NSLog("[Session] Loaded Volcengine API Key from env var and persisted to file")
+            } catch {
+                NSLog("[Session] WARNING: env var credentials loaded but failed to persist: %@", String(describing: error))
+            }
+            config = volcConfig
+        } else if provider == .volcano,
                   let appKey = ProcessInfo.processInfo.environment["VOLC_APP_KEY"],
                   let accessKey = ProcessInfo.processInfo.environment["VOLC_ACCESS_KEY"] {
             // Env var fallback (volcano only, for dev convenience)

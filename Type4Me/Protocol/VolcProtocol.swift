@@ -52,7 +52,7 @@ enum VolcProtocol: Sendable {
             corpus["boosting_table_id"] = boostingTableID
         } else if let contextString = buildContextString(hotwords: options.hotwords) {
             // No cloud table: fall back to inline hotwords
-            requestDict["context"] = contextString
+            corpus["context"] = contextString
         }
         if !corpus.isEmpty {
             requestDict["corpus"] = corpus
@@ -149,10 +149,15 @@ enum VolcProtocol: Sendable {
     static func decodeServerResponse(_ data: Data) throws -> VolcServerResponse {
         let header = try VolcHeader.decode(from: data)
         let headerBytes = Int(header.headerSize) * 4
+
+        if header.messageType == .serverError {
+            throw try decodeServerErrorPayload(data, header: header, payloadOffset: headerBytes)
+        }
+
         var offset = headerBytes
 
         // Skip sequence number if present
-        if header.flags == .positiveSequence || header.flags == .negativeSequenceLast {
+        if header.flags.hasSequence {
             offset += 4
         }
 
@@ -161,8 +166,10 @@ enum VolcProtocol: Sendable {
         }
 
         // Read payload size
-        let sizeBytes = data[data.startIndex + offset ..< data.startIndex + offset + 4]
-        let payloadSize = Int(UInt32(bigEndian: sizeBytes.withUnsafeBytes { $0.load(as: UInt32.self) }))
+        guard let payloadSizeRaw = readUInt32BE(data, offset: offset) else {
+            throw VolcProtocolError.invalidPayload
+        }
+        let payloadSize = Int(payloadSizeRaw)
         offset += 4
 
         guard data.count >= offset + payloadSize else {
@@ -170,22 +177,6 @@ enum VolcProtocol: Sendable {
         }
 
         var payload = data[data.startIndex + offset ..< data.startIndex + offset + payloadSize]
-
-        // Handle server error
-        if header.messageType == .serverError {
-            // Error payload may also be compressed/JSON
-            if header.compression == .gzip {
-                payload = try gzipDecompress(Data(payload))
-            }
-            if header.serialization == .json, !payload.isEmpty {
-                if let json = try? JSONSerialization.jsonObject(with: Data(payload)) as? [String: Any] {
-                    let code = json["code"] as? Int
-                    let message = json["message"] as? String
-                    throw VolcProtocolError.serverError(code: code, message: message)
-                }
-            }
-            throw VolcProtocolError.serverError(code: nil, message: nil)
-        }
 
         // Decompress if needed
         if header.compression == .gzip {
@@ -225,6 +216,61 @@ enum VolcProtocol: Sendable {
 
     static func decodeServerMessage(_ data: Data) throws -> VolcASRResult {
         try decodeServerResponse(data).result
+    }
+
+    private static func decodeServerErrorPayload(
+        _ data: Data,
+        header: VolcHeader,
+        payloadOffset: Int
+    ) throws -> VolcProtocolError {
+        var offset = payloadOffset
+        if header.flags.hasSequence {
+            offset += 4
+        }
+
+        // Current Volcengine docs define server error as:
+        // header + 4-byte error code + 4-byte message size + UTF-8 message.
+        if data.count >= offset + 8,
+           let code = readUInt32BE(data, offset: offset),
+           let messageSize = readUInt32BE(data, offset: offset + 4),
+           messageSize == UInt32(data.count - offset - 8)
+        {
+            let messageStart = data.startIndex + offset + 8
+            let messageEnd = messageStart + Int(messageSize)
+            let messageData = data[messageStart..<messageEnd]
+            let message = String(data: messageData, encoding: .utf8)
+            return .serverError(code: Int(code), message: message)
+        }
+
+        // Backward-compatible fallback for older tests/servers that encode errors
+        // like a normal payload-size-prefixed JSON server response.
+        guard data.count >= offset + 4,
+              let payloadSize = readUInt32BE(data, offset: offset)
+        else {
+            return .serverError(code: nil, message: nil)
+        }
+        offset += 4
+        guard data.count >= offset + Int(payloadSize) else {
+            return .serverError(code: nil, message: nil)
+        }
+
+        var payload = data[data.startIndex + offset ..< data.startIndex + offset + Int(payloadSize)]
+        if header.compression == .gzip {
+            payload = try gzipDecompress(Data(payload))
+        }
+        if header.serialization == .json, !payload.isEmpty,
+           let json = try? JSONSerialization.jsonObject(with: Data(payload)) as? [String: Any] {
+            let code = json["code"] as? Int
+            let message = json["message"] as? String ?? json["msg"] as? String
+            return .serverError(code: code, message: message)
+        }
+        return .serverError(code: nil, message: nil)
+    }
+
+    private static func readUInt32BE(_ data: Data, offset: Int) -> UInt32? {
+        guard offset >= 0, data.count >= offset + 4 else { return nil }
+        let start = data.startIndex + offset
+        return data[start..<start + 4].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
     }
 
     // MARK: - Gzip

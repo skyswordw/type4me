@@ -16,6 +16,7 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
     @State private var testTask: Task<Void, Never>?
     /// Hint shown below ASR credentials when only bigasr works (not seed 2.0)
     @State private var volcResourceHint: String?
+    @State private var volcLastConnectionError: String?
 
     // Local model states
     @State private var localModelAvailable: Bool = ModelManager.isQwen3ASRBundled
@@ -49,6 +50,9 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
     }
 
     private var hasASRCredentials: Bool {
+        if selectedASRProvider == .volcano {
+            return VolcanoASRConfig.hasValidCredentials(effectiveASRValues)
+        }
         let required = currentASRFields.filter { !$0.isOptional }
         let effective = effectiveASRValues
         return required.allSatisfy { field in
@@ -733,6 +737,7 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
         testTask?.cancel()
         asrTestStatus = .testing
         volcResourceHint = nil
+        volcLastConnectionError = nil
         let testValues = effectiveASRValues
         let provider = selectedASRProvider
         testTask = Task {
@@ -800,7 +805,10 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
         }
 
         // Both failed
-        asrTestStatus = .failed(L("连接失败，请检查 App ID 和 Access Token", "Connection failed, check App ID & Access Token"))
+        asrTestStatus = .failed(
+            volcLastConnectionError
+                ?? L("连接失败，请检查 API Key 或旧版 App ID / Access Token", "Connection failed, check API Key or legacy App ID / Access Token")
+        )
     }
 
     private func testVolcResource(baseValues: [String: String], resourceId: String, options: ASRRequestOptions) async -> Bool {
@@ -813,6 +821,7 @@ struct ASRSettingsCard: View, SettingsCardHelpers {
             await client.disconnect()
             return true
         } catch {
+            volcLastConnectionError = Self.describeConnectionError(error)
             return false
         }
     }

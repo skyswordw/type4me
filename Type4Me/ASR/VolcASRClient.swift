@@ -12,12 +12,32 @@ enum VolcASRError: Error, LocalizedError {
             return message ?? "HTTP \(code)"
         }
     }
+
 }
 
 actor VolcASRClient: SpeechRecognizer {
 
     private static let endpoint =
         URL(string: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async")!
+
+    static func makeHandshakeRequest(
+        url: URL = endpoint,
+        config volcConfig: VolcanoASRConfig,
+        connectId: String
+    ) -> URLRequest {
+        var request = URLRequest(url: url)
+        if volcConfig.usesAPIKey {
+            request.setValue(volcConfig.apiKey, forHTTPHeaderField: "X-Api-Key")
+        } else {
+            request.setValue(volcConfig.appKey, forHTTPHeaderField: "X-Api-App-Key")
+            request.setValue(volcConfig.accessKey, forHTTPHeaderField: "X-Api-Access-Key")
+        }
+        request.setValue(volcConfig.resourceId, forHTTPHeaderField: "X-Api-Resource-Id")
+        request.setValue(connectId, forHTTPHeaderField: "X-Api-Request-Id")
+        request.setValue(connectId, forHTTPHeaderField: "X-Api-Connect-Id")
+        request.setValue("-1", forHTTPHeaderField: "X-Api-Sequence")
+        return request
+    }
 
     private let logger = Logger(
         subsystem: "com.type4me.asr",
@@ -66,11 +86,11 @@ actor VolcASRClient: SpeechRecognizer {
 
         var request = URLRequest(url: targetURL)
         if !isCloudProxy {
-            // Direct connection: inject vendor credentials
-            request.setValue(volcConfig.appKey, forHTTPHeaderField: "X-Api-App-Key")
-            request.setValue(volcConfig.accessKey, forHTTPHeaderField: "X-Api-Access-Key")
-            request.setValue(volcConfig.resourceId, forHTTPHeaderField: "X-Api-Resource-Id")
-            request.setValue(connectId, forHTTPHeaderField: "X-Api-Connect-Id")
+            request = Self.makeHandshakeRequest(
+                url: targetURL,
+                config: volcConfig,
+                connectId: connectId
+            )
         }
 
         let session = options.resolvedSession
@@ -138,7 +158,9 @@ actor VolcASRClient: SpeechRecognizer {
             // Try to parse JSON error body (e.g. {"code": 1001, "message": "..."})
             var message: String?
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                message = json["message"] as? String ?? json["msg"] as? String
+                message = json["message"] as? String
+                    ?? json["msg"] as? String
+                    ?? json["error"] as? String
                 if let code = json["code"] as? Int, let msg = message {
                     message = "\(msg) (\(code))"
                 }
@@ -320,7 +342,7 @@ actor VolcASRClient: SpeechRecognizer {
     }
 
     private func makeTranscript(from result: VolcASRResult, isFinal: Bool) -> RecognitionTranscript {
-        var serverConfirmed = result.utterances
+        let serverConfirmed = result.utterances
             .filter(\.definite)
             .map(\.text)
             .filter { !$0.isEmpty }

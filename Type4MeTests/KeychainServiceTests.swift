@@ -4,6 +4,7 @@ import XCTest
 final class KeychainServiceTests: XCTestCase {
 
     private var originalProvider: ASRProvider!
+    private var originalVolcanoCredentials: [String: String]?
     private let appSupportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         .appendingPathComponent("Type4Me", isDirectory: true)
     private var credentialsURL: URL {
@@ -13,11 +14,12 @@ final class KeychainServiceTests: XCTestCase {
     override func setUp() {
         super.setUp()
         originalProvider = KeychainService.selectedASRProvider
+        originalVolcanoCredentials = KeychainService.loadASRCredentials(for: .volcano)
     }
 
     override func tearDown() {
         KeychainService.delete(key: "test_key")
-        try? KeychainService.saveASRCredentials(for: .volcano, values: [:])
+        try? KeychainService.saveASRCredentials(for: .volcano, values: originalVolcanoCredentials ?? [:])
         KeychainService.selectedASRProvider = originalProvider
         super.tearDown()
     }
@@ -68,8 +70,32 @@ final class KeychainServiceTests: XCTestCase {
         XCTAssertEqual(config?.resourceId, "myResource")
     }
 
+    func testLoadCredentials_fromNewVolcengineAPIKey() throws {
+        let original = KeychainService.loadASRCredentials(for: .volcano)
+        defer {
+            if let original {
+                try? KeychainService.saveASRCredentials(for: .volcano, values: original)
+            } else {
+                try? KeychainService.saveASRCredentials(for: .volcano, values: [:])
+            }
+        }
+
+        try KeychainService.saveASRCredentials(for: .volcano, values: [
+            "apiKey": "volc_api_key",
+            "resourceId": "myResource",
+        ])
+
+        let config = KeychainService.loadASRConfig()
+        XCTAssertNotNil(config)
+        XCTAssertEqual(config?.apiKey, "volc_api_key")
+        XCTAssertEqual(config?.appKey, "")
+        XCTAssertEqual(config?.accessKey, "")
+        XCTAssertEqual(config?.resourceId, "myResource")
+    }
+
     func testSaveASRCredentials_storesSecureFieldsOutsideCredentialsFile() throws {
         try KeychainService.saveASRCredentials(for: .volcano, values: [
+            "apiKey": "myAPIKey",
             "appKey": "myAppKey",
             "accessKey": "myAccessKey",
             "resourceId": "myResource",
@@ -81,7 +107,9 @@ final class KeychainServiceTests: XCTestCase {
 
         XCTAssertEqual(stored["appKey"], "myAppKey")
         XCTAssertEqual(stored["resourceId"], "myResource")
+        XCTAssertNil(stored["apiKey"])
         XCTAssertNil(stored["accessKey"])
+        XCTAssertEqual(KeychainService.loadASRCredentials(for: .volcano)?["apiKey"], "myAPIKey")
         XCTAssertEqual(KeychainService.loadASRCredentials(for: .volcano)?["accessKey"], "myAccessKey")
     }
 

@@ -13,8 +13,9 @@ struct VolcanoASRConfig: ASRProviderConfig, Sendable {
     static let resourceIdAuto = "auto"
 
     static var credentialFields: [CredentialField] {[
-        CredentialField(key: "appKey", label: "App ID", placeholder: "APPID", isSecure: false, isOptional: false, defaultValue: ""),
-        CredentialField(key: "accessKey", label: "Access Token", placeholder: L("访问令牌", "Access token"), isSecure: true, isOptional: false, defaultValue: ""),
+        CredentialField(key: "apiKey", label: "API Key", placeholder: L("新版控制台 API Key", "New console API Key"), isSecure: true, isOptional: true, defaultValue: ""),
+        CredentialField(key: "appKey", label: L("App ID（旧版）", "App ID (legacy)"), placeholder: "APPID", isSecure: false, isOptional: true, defaultValue: ""),
+        CredentialField(key: "accessKey", label: L("Access Token（旧版）", "Access Token (legacy)"), placeholder: L("访问令牌", "Access token"), isSecure: true, isOptional: true, defaultValue: ""),
         CredentialField(
             key: "resourceId",
             label: L("识别模型", "Model"),
@@ -30,15 +31,18 @@ struct VolcanoASRConfig: ASRProviderConfig, Sendable {
         ),
     ]}
 
+    let apiKey: String
     let appKey: String
     let accessKey: String
     let resourceId: String
     let uid: String
 
     init?(credentials: [String: String]) {
-        guard let appKey = credentials["appKey"], !appKey.isEmpty,
-              let accessKey = credentials["accessKey"], !accessKey.isEmpty
-        else { return nil }
+        let apiKey = Self.sanitized(credentials["apiKey"])
+        let appKey = Self.sanitized(credentials["appKey"])
+        let accessKey = Self.sanitized(credentials["accessKey"])
+        guard Self.hasValidAuth(apiKey: apiKey, appKey: appKey, accessKey: accessKey) else { return nil }
+        self.apiKey = apiKey
         self.appKey = appKey
         self.accessKey = accessKey
         let raw = credentials["resourceId"] ?? Self.resourceIdAuto
@@ -54,10 +58,32 @@ struct VolcanoASRConfig: ASRProviderConfig, Sendable {
     }
 
     func toCredentials() -> [String: String] {
-        ["appKey": appKey, "accessKey": accessKey, "resourceId": resourceId]
+        var result = ["resourceId": resourceId]
+        if !apiKey.isEmpty { result["apiKey"] = apiKey }
+        if !appKey.isEmpty { result["appKey"] = appKey }
+        if !accessKey.isEmpty { result["accessKey"] = accessKey }
+        return result
     }
 
     var isValid: Bool {
-        !appKey.isEmpty && !accessKey.isEmpty
+        Self.hasValidAuth(apiKey: apiKey, appKey: appKey, accessKey: accessKey)
+    }
+
+    var usesAPIKey: Bool { !apiKey.isEmpty }
+
+    static func hasValidCredentials(_ values: [String: String]) -> Bool {
+        hasValidAuth(
+            apiKey: sanitized(values["apiKey"]),
+            appKey: sanitized(values["appKey"]),
+            accessKey: sanitized(values["accessKey"])
+        )
+    }
+
+    private static func hasValidAuth(apiKey: String, appKey: String, accessKey: String) -> Bool {
+        !apiKey.isEmpty || (!appKey.isEmpty && !accessKey.isEmpty)
+    }
+
+    private static func sanitized(_ value: String?) -> String {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 }
