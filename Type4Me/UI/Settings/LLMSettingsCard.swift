@@ -21,6 +21,7 @@ struct LLMSettingsCard: View, SettingsCardHelpers {
         : UserDefaults.standard.bool(forKey: "tf_disableThinking")
     @State private var fetchedModelOptions: [FieldOption] = []
     @State private var isFetchingModels = false
+    @State private var modelFetchMessage: String?
 
     private enum LLMCredentialItem: Identifiable {
         case credential(CredentialField)
@@ -38,9 +39,15 @@ struct LLMSettingsCard: View, SettingsCardHelpers {
         LLMProviderRegistry.configType(for: selectedLLMProvider)?.credentialFields ?? []
     }
 
-    /// Effective values: saved base + dirty edits overlaid.
+    /// Effective values: saved base + defaults for unsaved fields + dirty edits overlaid.
     private var effectiveLLMValues: [String: String] {
         var result = savedLLMValues
+        for field in currentLLMFields where result[field.key] == nil && !field.defaultValue.isEmpty {
+            result[field.key] = field.defaultValue
+        }
+        for (key, value) in llmCredentialValues where result[key] == nil {
+            result[key] = value
+        }
         for key in editedFields {
             result[key] = llmCredentialValues[key] ?? ""
         }
@@ -51,7 +58,15 @@ struct LLMSettingsCard: View, SettingsCardHelpers {
         let required = currentLLMFields.filter { !$0.isOptional }
         let effective = effectiveLLMValues
         return required.allSatisfy { field in
-            !(effective[field.key] ?? "").isEmpty
+            !(effective[field.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    private var canFetchModels: Bool {
+        let fieldsNeededForFetch = currentLLMFields.filter { !$0.isOptional && $0.key != "model" }
+        let effective = effectiveLLMValues
+        return fieldsNeededForFetch.allSatisfy { field in
+            !(effective[field.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
@@ -191,6 +206,7 @@ struct LLMSettingsCard: View, SettingsCardHelpers {
             llmTestStatus = .idle
             isEditingLLM = true
             fetchedModelOptions = []
+            modelFetchMessage = nil
             loadLLMCredentialsForProvider(newProvider)
 
             // Auto-save provider switch if target already has credentials
@@ -306,9 +322,15 @@ struct LLMSettingsCard: View, SettingsCardHelpers {
                         }
                         .buttonStyle(.plain)
                         .help(L("从 API 获取模型列表", "Fetch models from API"))
-                        .disabled(isFetchingModels || !hasLLMCredentials)
+                        .disabled(isFetchingModels || !canFetchModels)
                         .padding(.top, 18)
                     }
+                }
+                if field.key == "model", let modelFetchMessage {
+                    Text(modelFetchMessage)
+                        .font(.system(size: 10))
+                        .foregroundStyle(TF.settingsTextTertiary)
+                        .lineLimit(2)
                 }
                 if customModeFields.contains(field.key) {
                     settingsField("", text: customBinding, prompt: field.placeholder)
@@ -460,6 +482,7 @@ struct LLMSettingsCard: View, SettingsCardHelpers {
     private func fetchModels() {
         guard !isFetchingModels else { return }
         isFetchingModels = true
+        modelFetchMessage = nil
         let values = effectiveLLMValues
         let provider = selectedLLMProvider
         testTask = Task {
@@ -475,28 +498,23 @@ struct LLMSettingsCard: View, SettingsCardHelpers {
                 request.setValue("Bearer \(llmConfig.apiKey)", forHTTPHeaderField: "Authorization")
                 request.timeoutInterval = 10
                 let (data, response) = try await URLSession.shared.data(for: request)
-                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return }
-                let decoded = try JSONDecoder().decode(ModelsResponse.self, from: data)
-                let models = decoded.data
-                    .map { FieldOption(value: $0.id, label: $0.id) }
-                    .sorted { $0.value < $1.value }
+                guard let http = response as? HTTPURLResponse else { return }
+                guard http.statusCode == 200 else {
+                    modelFetchMessage = L("获取模型失败 (\(http.statusCode))", "Model fetch failed (\(http.statusCode))")
+                    return
+                }
+                let models = try LLMModelCatalog.options(from: data, provider: provider)
                 guard !Task.isCancelled else { return }
                 fetchedModelOptions = models
+                modelFetchMessage = models.isEmpty
+                    ? L("未找到可用文本模型", "No usable text models found")
+                    : L("已同步 \(models.count) 个模型", "Synced \(models.count) models")
                 NSLog("[Settings] Fetched %d models for %@", models.count, provider.rawValue)
             } catch {
                 guard !Task.isCancelled else { return }
+                modelFetchMessage = L("获取模型失败", "Model fetch failed")
                 NSLog("[Settings] Model fetch failed (%@): %@", provider.rawValue, String(describing: error))
             }
         }
     }
-}
-
-// MARK: - /v1/models Response
-
-private struct ModelsResponse: Decodable {
-    let data: [ModelEntry]
-}
-
-private struct ModelEntry: Decodable {
-    let id: String
 }

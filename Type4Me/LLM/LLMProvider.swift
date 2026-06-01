@@ -60,6 +60,8 @@ enum LLMProvider: String, CaseIterable, Codable, Sendable {
         switch self {
         case .doubao:
             return [
+                FieldOption(value: "doubao-seed-2-0-mini-260428", label: "doubao-seed-2-0-mini-260428"),
+                FieldOption(value: "doubao-seed-2-0-lite-260428", label: "doubao-seed-2-0-lite-260428"),
                 FieldOption(value: "doubao-seed-2-0-mini-260215", label: "doubao-seed-2-0-mini-260215"),
                 FieldOption(value: "doubao-seed-2-0-lite-260215", label: "doubao-seed-2-0-lite-260215"),
                 FieldOption(value: "doubao-seed-2-0-pro-260215", label: "doubao-seed-2-0-pro-260215"),
